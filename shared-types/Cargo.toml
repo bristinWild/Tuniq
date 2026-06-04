@@ -1,0 +1,15 @@
+[package]
+name = "tuniq-shared-types"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-boundary interface types shared by the guest, the prover, and the Solana coordinator."
+
+# Intentionally dependency-light: borsh only. This crate is depended on by build
+# units with conflicting toolchains (risc0 guest, nssa host, anchor program), so
+# it must NOT pull in nssa / solana / risc0. Keep it that way.
+[dependencies]
+borsh = { version = "1.5", features = ["derive"] }
+
+[features]
+default = ["std"]
+std = []

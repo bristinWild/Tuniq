@@ -1,0 +1,13 @@
+[package]
+name = "predicate_core"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+nssa_core = { workspace = true }
+spel-framework-macros = { workspace = true }
+borsh = { workspace = true }
+serde = { workspace = true }

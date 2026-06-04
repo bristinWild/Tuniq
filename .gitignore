@@ -1,0 +1,35 @@
+# Rust build artifacts
+target/
+**/target/
+
+# The guest is an excluded, separate build with its own target dir
+predicate-engine/methods/guest/target/
+
+# Lockfiles: keep the workspace + shared-types locks (apps), drop the guest's
+# (it's a separate build; its lock is regenerated). Comment the next line out
+# if you prefer to commit every lockfile.
+predicate-engine/methods/guest/Cargo.lock
+
+# Proof / journal / image-id artifacts (binary outputs from runs)
+*.bin
+proof_seal.bin
+journal.bin
+image_id.txt
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+__MACOSX/
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Misc
+*.log

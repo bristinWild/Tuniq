@@ -1,0 +1,17 @@
+[package]
+name = "predicate-methods"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[build-dependencies]
+risc0-build = { workspace = true }
+
+[dependencies]
+risc0-zkvm = { version = "=3.0.5", features = ["std"] }
+predicate_core = { workspace = true }
+
+[package.metadata.risc0]
+methods = ["guest"]

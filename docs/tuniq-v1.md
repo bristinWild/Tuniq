@@ -1,19 +1,19 @@
-# Tuniq V1 — Scope & Definition
+# Tuniq V1 - Scope & Definition
 
 What the first version of Tuniq is, precisely: what it does, what it deliberately
 does not do, the components that make it up, and what "V1 is done" concretely
 means.
 
 Companion docs:
-- `architectural-research-litepaper.md` — the research, architecture, and why Logos is irreplaceable
-- `dev-roadmap.md` — the milestone plan and ordering
+- `TUNIQ-LITEPAPER.md` - the research, architecture, and why Logos is irreplaceable
+- `ROADMAP.md` - the milestone plan and ordering
 
 ---
 
 ## V1 in one sentence
 
 A developer can run a single confidential predicate over one shielded, on-chain-
-commitment-bound input on Logos, and have the verified result settle on Solana —
+commitment-bound input on Logos, and have the verified result settle on Solana -
 with the secret value never exposed to anyone, including the prover's ability to
 forge it.
 
@@ -54,19 +54,19 @@ with the Logos team.
 
 ### Out of scope for V1 (deferred)
 
-- **Developer SDK / annotations** — writing confidential programs from a normal
+- **Developer SDK / annotations** - writing confidential programs from a normal
   toolchain via a `#[confidential]`-style surface. (Roadmap M5.)
-- **Crypto-syscall accelerators** — sha256, signature verification at low cost.
+- **Crypto-syscall accelerators** - sha256, signature verification at low cost.
   (Roadmap M2.)
-- **Broad opcode / syscall coverage** — V1 supports the predicate class above, not
+- **Broad opcode / syscall coverage** - V1 supports the predicate class above, not
   arbitrary Solana programs. (Roadmap M3.)
-- **Large / business-logic-heavy programs** — out of scope by design; interpreter
+- **Large / business-logic-heavy programs** - out of scope by design; interpreter
   overhead makes these impractical. Not a V1 limitation but a permanent product
   boundary.
-- **Multiple shielded inputs / complex disclosure** — V1 is one shielded input,
+- **Multiple shielded inputs / complex disclosure** - V1 is one shielded input,
   one boolean output.
-- **Decentralized proving** — the V1 worker is a single managed x86 service.
-- **Mainnet** — V1 targets devnet.
+- **Decentralized proving** - the V1 worker is a single managed x86 service.
+- **Mainnet** - V1 targets devnet.
 
 ---
 
@@ -78,7 +78,7 @@ What a confidential program can express in V1:
   and bound to that account's on-chain commitment.
 - Take **public** parameters (e.g. a threshold) openly.
 - Evaluate a **threshold-style predicate** over the private value.
-- Reveal **only** the boolean result plus the public parameters — never the secret,
+- Reveal **only** the boolean result plus the public parameters - never the secret,
   and never a value from which the secret can be derived.
 
 The idiomatic expression is assert-and-panic: a valid proof existing *is* the
@@ -174,11 +174,11 @@ V1 is done when **all** of the following hold:
 
 ## Known limitations in V1 (stated honestly)
 
-- One shielded input, one boolean output — richer disclosure and multi-input
+- One shielded input, one boolean output - richer disclosure and multi-input
   predicates come later.
 - The predicate class is threshold-style; broad program support is post-V1.
 - Crypto-heavy predicates are expensive until accelerators (M2) land.
-- The proving worker is a single managed x86 service — trust-light (sees the
+- The proving worker is a single managed x86 service - trust-light (sees the
   succinct receipt, never the cleartext), not trustless, and not yet decentralized.
 - No developer SDK yet; building a confidential program in V1 is hands-on, not
   self-serve.
@@ -188,5 +188,5 @@ V1 is done when **all** of the following hold:
 ## After V1
 
 The roadmap continues with accelerators (M2), opcode/syscall coverage (M3), the
-flagship demo (M4), and the developer SDK (M5) — the step that turns Tuniq from a
+flagship demo (M4), and the developer SDK (M5) - the step that turns Tuniq from a
 working product into a platform external developers can build on. See `ROADMAP.md`.
