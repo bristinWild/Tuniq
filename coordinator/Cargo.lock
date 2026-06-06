@@ -936,8 +936,10 @@ name = "coordinator"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "borsh 0.10.4",
  "groth_16_verifier",
  "litesvm",
+ "solana-account 3.4.0",
  "solana-keypair",
  "solana-message 3.1.0",
  "solana-signer",

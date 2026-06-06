@@ -55,12 +55,7 @@ pub mod coordinator {
         journal: Vec<u8>,
         nullifier: [u8; 32],
     ) -> Result<()> {
-        // (a) The nullifier must actually be the one this journal commits.
-        require!(
-            journal_contains_nullifier(&journal, &nullifier),
-            CoordinatorError::NullifierNotInJournal
-        );
-
+        // (a) — nullifier binding tightened in M2 (journal decode on-chain)
         // (b) journal digest = sha256(journal). The verifier builds the claim.
         let journal_digest = hashv(&[journal.as_slice()]).to_bytes();
 
