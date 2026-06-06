@@ -80,8 +80,12 @@ The nullifier PDA replay guard works. The secret never appears on the Solana sid
   nullifiers) - the Half B parse, made concrete. See `decode.rs`.
 - ✅ Coordinator Anchor program: CPI into Verifier Router (v3.0.0), nullifier-PDA
   replay guard, `PredicateVerified` event emission.
-- ✅ `verify_predicate` litesvm integration test: full CPI chain on real artifacts,
-  `groth_16_verifier` pairing check passes. Commit: `de06ce3`.
+- ✅ **Verify `seal.bin` through the on-chain `verify_groth16` path** — CPI into the
+  Verifier Router (`boundless-xyz/risc0-solana` v3.0.0), `groth_16_verifier` pairing
+  check passes on the *shielded* seal. This was the task moved from M0; it is the
+  decisive connection between the moat and Solana settlement.
+- ✅ `verify_predicate` litesvm integration test: full CPI chain on real artifacts.
+  Commit: `de06ce3`.
 - ✅ Two non-obvious encoding facts established (see `6.m1-green.md`):
   - `pi_a` must be **pre-negated** (BN254 G1) before passing to the verifier.
   - `image_id` must be **LE bytes per word** (not raw hex parse).
