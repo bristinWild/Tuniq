@@ -1,23 +1,25 @@
-# Tuniq - Confidential sBPF on Logos
+# Tuniq — Confidential sBPF on Logos
 
 ### An architectural research litepaper
 
 > Run confidential Solana programs. Developers write Solana logic the way they
-> already do - same Rust, same Anchor, same sBPF bytecode - but now over private
+> already do — same Rust, same Anchor, same sBPF bytecode — but now over private
 > data. The program runs inside Logos's privacy-preserving zkVM over shielded
 > inputs that never become public, and only a verified result settles back on
 > Solana.
 
 This document is a refresher of the research behind Tuniq, a primer for the
 community, and the decision base for the v1 technical architecture and roadmap.
-It is deliberately not a whitepaper - there is no formal protocol spec or proofs
+It is deliberately not a whitepaper — there is no formal protocol spec or proofs
 here. Call it a litepaper: enough to understand what was validated, what is
 irreplaceable, and what to build first.
 
-**Status (update):** the one previously-open seam - wrapping the shielded,
-commitment-bound Logos proof to a Solana-verifiable Groth16 proof - is now
-**demonstrated end to end on real proofs** (see §6 and §7). What §7 once framed as
-"the gate, not yet green" is closed.
+**Status (update):** two milestones are now green. M0 wrapped the shielded,
+commitment-bound Logos proof to a 256-byte Groth16 seal (§6, §7). M1 verified
+that seal on Solana through the real Verifier Router CPI — the `alt_bn128` pairing
+check passed on real artifacts, with the secret provably absent. What was once
+"the gate, not yet green" is closed. What was once "M1 integration, not research"
+is done.
 
 Experiments and raw results: https://github.com/bristinWild/tuniq-experiments
 
@@ -29,7 +31,7 @@ Every public blockchain, Solana included, verifies a program by re-executing it.
 Validators agree on a result because they all re-run the same code over the same
 inputs and get the same answer. This works only because the inputs are public.
 
-The moment an input is private, re-execution is impossible - no validator can
+The moment an input is private, re-execution is impossible — no validator can
 re-run a program over data it is not allowed to see. So the data has to be
 exposed. That is the wall: public chains cannot compute over secrets, because
 their trust model is "redo the work," and redoing the work means seeing the
@@ -38,7 +40,7 @@ secret.
 There is exactly one way around the wall. Instead of re-running the program to
 trust it, produce a mathematical proof that it ran correctly. A proof can be
 checked without re-execution, so the inputs can stay hidden. That requires a
-zero-knowledge virtual machine - and to keep the inputs hidden end-to-end, a
+zero-knowledge virtual machine — and to keep the inputs hidden end-to-end, a
 *privacy-preserving* one.
 
 That is Logos.
@@ -47,7 +49,7 @@ That is Logos.
 
 ## 2. The core insight
 
-Tuniq's premise is that Solana - the largest developer ecosystem in crypto -
+Tuniq's premise is that Solana — the largest developer ecosystem in crypto —
 cannot build confidential applications today, and that Logos's privacy-preserving
 zkVM is the one mechanism that can unlock them without forcing developers off
 their existing tooling.
@@ -59,7 +61,7 @@ balance is at least some threshold, without revealing the balance.
 - **Plain Solana** verifies by re-running, so it must see the balance. The secret
   leaks. Impossible by construction.
 - **A plain zkVM (vanilla RISC Zero)** can read the balance as a private witness
-  and reveal only the boolean result. The secret stays hidden - but nothing ties
+  and reveal only the boolean result. The secret stays hidden — but nothing ties
   that witness to a *real* balance. The prover can supply any number they like.
   The proof attests that *some* value cleared the bar, not that *the real
   on-chain value* did. This is not trustworthy; it is confidential-compute
@@ -67,25 +69,25 @@ balance is at least some threshold, without revealing the balance.
 - **Logos** keeps the balance hidden *and* binds it to an on-chain commitment.
   The privacy circuit forces the witnessed value to be the one that opens that
   commitment, so the prover cannot substitute a fake number. The proof now
-  attests that the real, on-chain-anchored value cleared the bar - and still
+  attests that the real, on-chain-anchored value cleared the bar — and still
   reveals only the boolean.
 
-That combination - a secret that is simultaneously invisible and provably the
-real value - exists nowhere else. Remove Logos and the guarantee collapses to the
+That combination — a secret that is simultaneously invisible and provably the
+real value — exists nowhere else. Remove Logos and the guarantee collapses to the
 plain-zkVM case, which has no on-chain binding and therefore no moat. Logos is
 not an optimization in this design. It is the load-bearing wall.
 
 A useful way to hold the data flow in your head: the result is *read* on Solana,
 but it is *trusted* because of what happened on Logos. Solana is where you read
 the boolean; Logos is why the boolean means anything. The secret itself is never
-read from anywhere - it stays with its owner. What lives on Logos is the
+read from anywhere — it stays with its owner. What lives on Logos is the
 commitment (a hash that anchors the value), never the cleartext.
 
 ---
 
 ## 3. What you can actually compute
 
-A common misread is that confidential execution means "comparisons only" - that
+A common misread is that confidential execution means "comparisons only" — that
 you can only use secret values inside require/assert checks. That is too narrow.
 
 You can run arbitrary sBPF logic over secret values: arithmetic, hashing,
@@ -136,11 +138,11 @@ DEVELOPER (build time)
   writes Solana program (Rust/Anchor), marks confidential inputs via the SDK
   → compiles to sBPF bytecode + a confidential manifest
         |
-USER's private data - lives shielded on Logos, bound to an on-chain commitment
+USER's private data — lives shielded on Logos, bound to an on-chain commitment
         |
         v
 +------------------------------------------------------------------+
-| LOGOS (LEZ) - the irreplaceable layer                            |
+| LOGOS (LEZ) — the irreplaceable layer                            |
 |   sBPF interpreter (the guest)                                   |
 |     - loads the developer's bytecode                             |
 |     - private witness: the shielded balance (bound to commitment)|
@@ -160,10 +162,10 @@ USER's private data - lives shielded on Logos, bound to an on-chain commitment
                                 | Groth16 seal + journal + image ID
                                 v
 +------------------------------------------------------------------+
-| SOLANA - settlement                                              |
+| SOLANA — settlement                                              |
 |   Tuniq coordinator program:                                     |
 |     - verify_groth16(...) via the Verifier Router (alt_bn128)     |
-|     - parse the journal / circuit output                          |
+|     - nullifier PDA replay guard (one proof, one use)            |
 |     - forward the verified result to the developer's program     |
 |   Developer's program acts on a trusted result it never saw raw  |
 +------------------------------------------------------------------+
@@ -174,7 +176,7 @@ USER's private data - lives shielded on Logos, bound to an on-chain commitment
 The diagram has a trust boundary running between Logos and Solana. Everything on
 the Logos side happens where the secret exists; everything on the Solana side
 sees only the verified result. The single invariant the whole product enforces:
-the shielded value crosses *zero* boundaries - it is a private witness in the
+the shielded value crosses *zero* boundaries — it is a private witness in the
 circuit, absent from the receipt's journal, and absent from the seal that reaches
 Solana.
 
@@ -182,27 +184,21 @@ Solana.
   things no other layer can: it runs the interpreter *and* binds the witness to an
   on-chain commitment. That binding is the moat.
 - **The offchain worker** is the one unavoidable operational dependency. The
-  succinct→Groth16 wrap requires x86 hardware (the Circom witness generator is x86
-  assembly; rapidsnark runs via Docker on x86), so it cannot run inside the Logos
-  guest and cannot run on-chain. In production it becomes a managed proving
-  service rather than a hand-spun cloud box. It is trust-light, not trustless: it
-  sees the succinct receipt but never the cleartext secret.
-- **The Solana coordinator** does two jobs: verify the Groth16 proof (the
-  verification cryptography is proven - Experiment 3) and parse the circuit output
-  to extract the result (the M1 integration work - see §7).
+  succinct→Groth16 wrap requires x86 hardware, so it cannot run inside the Logos
+  guest and cannot run on-chain. In production it becomes a managed proving service
+  rather than a hand-spun cloud box. It is trust-light, not trustless: it sees the
+  succinct receipt but never the cleartext secret.
+- **The Solana coordinator** verifies the Groth16 proof via the Verifier Router CPI
+  and guards against replay via a nullifier PDA. Both are proven and working (M1).
+  The remaining product work is wiring a consumer program to act on the result.
 
 ---
 
-## 6. What was validated - the three experiments (+ the connecting run)
+## 6. What was validated — the experiments + the connecting runs
 
-Three experiments tested the three things that had to be true; a fourth run (M0)
-connected them. All passed.
+Four runs tested and connected the stack. All passed.
 
-### Experiment 1 - Is interpreting sBPF fast enough?
-
-A minimal sBPF interpreter was built as a RISC Zero guest and run over programs of
-increasing size; the zkVM cycle counter measured cost, and a linear fit separated
-fixed overhead from per-instruction cost.
+### Experiment 1 — Is interpreting sBPF fast enough?
 
 | Metric | Value |
 |---|---|
@@ -213,129 +209,100 @@ fixed overhead from per-instruction cost.
 | Verification time | 12 ms |
 
 A realistic predicate fits in a single RISC Zero proving segment (under
-2^16 = 65,536 cycles), the cheapest category. The 9.4 s figure is the pessimistic
-floor on the worst hardware; GPU or a proving service brings it to seconds or
-sub-second. Caveat: crypto syscalls raise cost sharply unless routed to
-accelerators - a later-stage item.
+2^16 = 65,536 cycles). Caveat: crypto syscalls raise cost sharply unless routed to
+accelerators — a later-stage item (M3).
 
-### Experiment 2 - Can the secret stay secret *and* unforgeable?
+### Experiment 2 — Can the secret stay secret *and* unforgeable?
 
-A standalone LEZ program evaluated `balance >= threshold` over a private account
-whose balance is bound to its on-chain commitment, through LEZ's
-`execute_and_prove` / privacy-preserving circuit (SPEL framework). Real proofs,
-`RISC0_DEV_MODE=0`.
+`balance >= threshold` over a shielded, commitment-bound LEZ account. Real proofs,
+`RISC0_DEV_MODE=0`. Valid case proved; false case unprovable (soundness). Three
+properties demonstrated together, all requiring LEZ: commitment binding, selective
+disclosure, soundness. This is the experiment that makes Logos irreplaceable.
 
-- The valid case (balance 5,000 ≥ 1,000) produced a real proof (~112 s on an
-  unaccelerated laptop CPU); the balance never appeared in any public field.
-- The false case (balance 500) could not be proven at all - the guest panics and
-  `execute_and_prove` fails. A false statement is unprovable. This is soundness,
-  demonstrated.
-
-Three properties were shown together, all requiring LEZ: commitment binding
-(anti-substitution), selective disclosure, and soundness. Vanilla RISC Zero
-provides none of the binding on-chain. This is the experiment that makes Logos
-irreplaceable.
-
-Environment: `RISC0_DEV_MODE=0`, `r0vm` 3.0.5, `nssa_core` `v0.2.0-rc3`,
+Environment: `RISC0_DEV_MODE=0`, `r0vm` 3.0.5, `nssa_core` v0.2.0-rc3,
 `spel-framework` v0.3.0.
 
-### Experiment 3 - Can Solana cheaply verify and act on the result?
+### Experiment 3 — Can Solana cheaply verify and act on the result?
 
-An Anchor program verifies a RISC Zero Groth16 proof by CPI into the deployed
-Verifier Router. The verifier's own suite passed 12/12 (valid verifies, tampered
-rejected, wrong inputs rejected); on-chain verification costs under 200k CU. A
-Groth16 proof of our own *standalone* predicate guest, generated on x86, verified
-through the exact Solana logic with the secret absent from the journal.
+Anchor verifier deploys; RISC Zero Solana verifier passes 12/12 vectors;
+on-chain verification under 200k CU. Proven for a *standalone*
+(non-commitment-bound) guest — the Half A path.
 
-Environment: `r0vm` 3.0.5, `risc0-groth16` 3.0.4, Anchor 0.31.1, RISC Zero Solana
-verifier `boundless-xyz/risc0-solana` v3.0.0.
+Environment: `r0vm` 3.0.5, `risc0-groth16` 3.0.4, Anchor 0.31.1,
+`boundless-xyz/risc0-solana` v3.0.0.
 
-### M0 - the connecting run (DONE)
+### M0 — the connecting run (DONE)
 
-The three experiments validated the pieces; M0 connected the moat (Exp 2) to the
-settlement path (Exp 3) on a *single* artifact. The Experiment-2 shielded,
-commitment-bound proof was reproduced in-repo, captured to disk, locally
-verified, and wrapped to Groth16 on x86 - producing a 256-byte Solana-verifiable
-seal.
+Experiment 2's shielded, commitment-bound proof was reproduced in-repo, captured
+to disk, locally verified, and wrapped to Groth16 on x86 — producing a 256-byte
+Solana-verifiable seal. The composed-assumption wrap succeeded with no special
+handling — the one caveat §7 flagged for empirical confirmation.
 
-- `proof.bin` (223,835 B) - the succinct receipt
-- `journal.bin` (696 B) - the `PrivacyPreservingCircuitOutput`
-- `seal.bin` (256 B) - the Groth16 proof Solana verifies
+Artifacts: `proof.bin` (223,835 B), `journal.bin` (696 B), `seal.bin` (256 B),
+`image_id.txt`. All regenerable; the prover crate (`prover/`) documents how.
 
-Crucially, the receipt carried the predicate composed as a *resolved assumption*
-(how `execute_and_prove` works), and the Groth16 wrap of that
-receipt-with-assumptions **succeeded with no special handling** - the one caveat
-§7 flagged for empirical confirmation.
+### M1 — on-chain verification (DONE)
+
+The coordinator Anchor program verified `seal.bin` on a local Solana VM (litesvm)
+through the real Verifier Router CPI and `groth_16_verifier`. The `alt_bn128`
+pairing check passed. The nullifier PDA replay guard fired correctly. The secret
+was absent from everything Solana saw. Commit: `de06ce3`.
+
+Two non-obvious encoding requirements discovered and confirmed (see
+`docs/dev-core-notes/6.m1-green.md`): `pi_a` must be pre-negated (BN254 G1), and
+`image_id` must be passed as little-endian bytes per u32 word. Both are caller
+responsibilities; the verifier does not handle them internally.
 
 ---
 
-## 7. Half A vs Half B - now connected
+## 7. Half A vs Half B — both now connected
 
-This distinction is the conceptual heart of the design, and it is worth keeping
-even though the gap it once described is now closed.
-
-**Half A** is a *standalone* confidential predicate guest whose proof carries a
-clean result journal and verifies on Solana. But that standalone guest does **not**
-carry the commitment binding from Experiment 2 - it is essentially
-vanilla-RISC-Zero confidential compute: the secret stays out of the journal, but
-nothing on-chain forces the prover to have used the real value. The moat is not
-in it. Half A remains a useful optional "fast lane" for cases where the prover is
-trusted, but it is not the product thesis.
+**Half A** is a *standalone* confidential predicate guest whose proof verifies on
+Solana but carries no commitment binding — vanilla-RISC-Zero confidential compute.
+The secret stays out of the journal, but nothing on-chain forces the prover to
+have used the real value. Useful as a fast lane for trusted-prover cases, but not
+the product thesis.
 
 **Half B** is the real thing: taking Experiment 2's shielded, commitment-bound
-proof through the worker and onto Solana. The litepaper previously listed this as
-"feasible, assessed from source, not yet demonstrated." **It is now demonstrated**
-(M0, §6):
+proof through the worker and onto Solana. **It is now demonstrated end to end:**
 
-- LEZ's `Proof` type is `Proof(Vec<u8>)` with `into_inner()` / `from_inner()`; the
-  full RISC Zero `Receipt` reconstructs via `Receipt::new(inner, output.to_bytes())`
-  - confirmed against the nssa source and exercised by the local pre-flight.
-- `execute_and_prove` proves with `ProverOpts::succinct()`; that succinct receipt
-  is exactly the input the Groth16 wrap consumes - confirmed: it wrapped.
-- The receipt-with-resolved-assumptions wrap was the one "worth confirming
-  empirically" step - confirmed: it wrapped cleanly to a 256-byte seal.
+- The succinct receipt wraps to Groth16 cleanly (M0) — including for
+  receipts-with-resolved-assumptions, the one caveat from the earlier litepaper.
+- The Groth16 seal verifies on Solana through the real Verifier Router CPI (M1).
+- The journal (`PrivacyPreservingCircuitOutput`) carries commitments and nullifiers
+  — no boolean result field, because verification *is* the result. The coordinator
+  parses it; the replay guard consumes the nullifier.
 
-**What remains is M1 integration, not research:**
+The moat and the settlement, once demonstrated on *different artifacts*, now run
+on *one*. "Confidential Solana programs" is demonstrated end to end.
 
-1. **On-chain verification of *this* seal.** Experiment 3 proved the Verifier
-   Router path on a standalone proof; M1 points it at the shielded seal. Same CPI,
-   different (already-captured) artifact.
-2. **Parsing the journal.** The Solana-verified journal is the
-   `PrivacyPreservingCircuitOutput` (commitments / nullifiers), not a clean
-   eligibility struct. The coordinator must decode it. The 696-byte artifact now
-   exists to decode against - the parse is concrete, not hypothetical.
+**What remains is M2 product wiring, not research:**
 
-So the moat and the settlement, once demonstrated on *different artifacts*, now
-shake hands on *one*. "Confidential Solana programs" is demonstrated end to end
-through the Groth16 seal; the on-chain consume is the remaining wiring.
+- Wire a consumer program that acts on the coordinator's verified result.
+- Tighten the nullifier binding (on-chain journal decode for precise extraction).
+- Wrap the proving service into a callable API.
 
 ---
 
-## 8. Build it from proven parts - reuse vs. custom
-
-A guiding principle: never reinvent verification cryptography. The reuse/custom
-split is clean.
+## 8. Build it from proven parts — reuse vs. custom
 
 **Reuse (audited, already exercised):**
 
-- RISC Zero Solana verifier - `boundless-xyz/risc0-solana` v3.0.0 (Verifier Router
+- RISC Zero Solana verifier — `boundless-xyz/risc0-solana` v3.0.0 (Verifier Router
   + `groth_16_verifier`). Passed 12/12 vectors; `alt_bn128`, under 200k CU.
-- The succinct→Groth16 wrap - `risc0-groth16` and the RISC Zero proving stack
-  (exercised by the `prover/` unit in M0).
-- LEZ's privacy-preserving circuit, commitment scheme, and `execute_and_prove` -
-  the SPEL framework primitives.
+- The succinct→Groth16 wrap — `risc0-groth16` and the RISC Zero proving stack.
+- LEZ's privacy-preserving circuit, commitment scheme, and `execute_and_prove`.
 
 **Custom (the thin glue that is the actual product):**
 
-- **Coordinator program (Solana).** CPI into the Verifier Router, parse *our*
-  `PrivacyPreservingCircuitOutput`, forward the result. Extends the Experiment 3
-  verifier with the Half B output parsing.
+- **Coordinator program (Solana).** CPI into the Verifier Router, nullifier-PDA
+  replay guard, `PrivacyPreservingCircuitOutput` parsing, consumer forward. Working
+  as of M1.
 - **Proving service (offchain, x86).** The M0 wrap binary grown into a managed
   worker that takes a succinct receipt and returns a Groth16 seal. Trust-light:
   sees the succinct receipt, never the cleartext secret.
 - **Developer SDK.** Build-time annotations for marking confidential inputs,
   compilation to sBPF + a confidential manifest, and client-side orchestration.
-  The SDK *calls* the worker; it holds no x86 wrap logic itself.
 
 ---
 
@@ -358,73 +325,75 @@ native Solana tooling rather than a foreign DSL.
 - Interpreter overhead bounds scope to small programs. Large programs are out of
   scope by design, not by accident.
 - Crypto syscalls inside a predicate raise cost sharply until accelerators are
-  added (a later stage).
+  added (M3).
 - The x86 wrap is an unavoidable offchain, trust-light step; the product can never
   be fully on-chain.
 - ~~Half B's end-to-end run is assessed feasible but not yet demonstrated.~~
-  **Resolved (M0):** the shielded receipt wraps to a Solana-verifiable Groth16
-  seal. The remaining work (on-chain verify of this seal + circuit-output parsing)
-  is M1 integration, not open research.
+  **Resolved (M0 + M1):** the shielded receipt wraps to Groth16 and verifies on
+  Solana through the real `alt_bn128` pairing check. The architecture is
+  demonstrated end to end on real proofs.
 - Market demand for confidential compute on Solana is plausible but unproven; a
-  working end-to-end demo de-risks both the technology and the pitch.
-- Solo founder, frontier tech, two ecosystems - heavy. The technical risk is now
-  largely retired; the proven experiments plus the connecting run remove the core
-  unknowns.
+  working end-to-end demo (M5) de-risks the pitch.
+- Solo founder, frontier tech, two ecosystems — heavy. The core technical risk is
+  now retired. M2 onwards is product work on a proven foundation.
 
 ---
 
 ## 11. Roadmap to v1
 
-The order is dictated by §7: prove the connection first, then build around it.
 See `dev-roadmap.md` for the tracked, granular version.
 
-**M0 - the gate (DONE).** Wrap Experiment 2's shielded, commitment-bound succinct
-receipt to Groth16 on x86 → 256-byte seal. **Green.**
+**M0 — DONE.** Shielded receipt wraps to Groth16 on x86. Composed-assumption wrap
+confirmed.
 
-**M1 - coordinator + proving worker (NEXT).** Decode the captured journal; verify
-the seal on Solana via the Verifier Router; forward the result to a consumer
-program. Wrap the droplet workflow into a callable service. Deliver one
-confidential predicate over one shielded input, settled on Solana, end-to-end.
+**M1 — DONE.** Coordinator verifies the shielded seal on Solana via Verifier
+Router CPI. Nullifier replay guard works. The full stack is demonstrated.
 
-**M2 - accelerators.** Route crypto syscalls (sha256, signatures) to RISC Zero
-accelerators so crypto-adjacent confidential programs stay affordable.
+**M2 — NEXT.** Consumer program wiring + proving service. Wire a downstream
+program that acts on the coordinator's verified result. Wrap the droplet workflow
+into a callable proving service.
 
-**M3 - opcode + syscall coverage.** Expand the sBPF interpreter's coverage to the
-surface real confidential predicates need.
+**M3 — Accelerators.** Route crypto syscalls to RISC Zero accelerators so
+crypto-adjacent predicates stay affordable.
 
-**M4 - flagship demo.** A real confidential program (sealed-bid auction or private
-eligibility) over shielded Logos data, verified on Solana.
+**M4 — Opcode + syscall coverage.** Expand the sBPF interpreter to the surface
+real confidential predicates need.
 
-**M5 - SDK.** Developer annotations and tooling so external developers can write
+**M5 — Flagship demo.** A real confidential application (sealed-bid auction or
+private eligibility) over shielded Logos data, verified on Solana.
+
+**M6 — SDK.** Developer annotations and tooling so external developers can write
 confidential Solana programs without leaving their stack.
 
 ---
 
-## Appendix - the intuition, in one analogy
+## Appendix — the intuition, in one analogy
 
 A secret travels down a single road, and the experiments are stretches of it.
 
-You need to prove a private fact to your home government (Solana) - "my balance is
-over $1,000" - without showing the number. Home offices verify by redoing the
+You need to prove a private fact to your home government (Solana) — "my balance is
+over $1,000" — without showing the number. Home offices verify by redoing the
 work, which would mean seeing your statement. So you go to a foreign notary
 (Logos) with a sealed, tamper-proof booth.
 
-- The booth reads your statement line by line in a slow certified procedure - the
+- The booth reads your statement line by line in a slow certified procedure — the
   sBPF interpreter running your program one instruction at a time. **Experiment 1**
   timed that reading and found it fast enough for a short document.
 - Inside the booth, your statement goes in sealed and never comes out; the booth
-  stamps only the outside - "balance exceeds $1,000." Because the envelope was
+  stamps only the outside — "balance exceeds $1,000." Because the envelope was
   sealed by the official registry (the on-chain commitment), the notary cannot
   swap in a fake statement, and cannot stamp a claim that isn't true.
-  **Experiment 2** built and tested that booth on real Logos machinery. Its one
-  quirk: the stamp is in the foreign notary's own ornate format.
-- Back home, a fast desk checks a foreign seal against an international registry in
-  seconds, without redoing the work - the Groth16 verifier on Solana.
+  **Experiment 2** built and tested that booth on real Logos machinery.
+- Back home, a fast desk checks a foreign seal against an international registry
+  in seconds, without redoing the work — the Groth16 verifier on Solana.
   **Experiment 3** proved the desk accepts genuine seals and rejects forgeries.
 
-**The link is now made.** The *real sealed booth's* stamp (Experiment 2's proof)
-was run through the re-pressing machine that converts the ornate stamp into the
-compact international format (the x86 worker, M0) - and it came out as a valid
-256-byte seal. What remains is handing that seal across the home desk (the Solana
-coordinator) and reading what it certifies - M1 wiring, on an artifact that now
-exists.
+**Both runs are now complete.** The real sealed booth's stamp (Experiment 2's
+proof) was run through the re-pressing machine (the x86 worker, M0) and came out
+as a valid 256-byte seal. That seal was handed across the home desk (the Solana
+coordinator, M1) and the desk accepted it — the `alt_bn128` pairing check passed,
+with the secret provably never exposed.
+
+The road is proven end to end. What remains is paving it: consumer program wiring,
+a callable proving service, accelerators, broader opcode coverage, and the
+flagship demo.
