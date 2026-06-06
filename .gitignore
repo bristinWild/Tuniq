@@ -34,3 +34,11 @@ __MACOSX/
 # Misc
 *.log
 artifacts/
+
+
+# Regenerable AND version-dependent: seal/journal/image-id go stale the moment
+# the predicate or the nssa/spel version changes, so a committed proof can
+# silently become wrong. Reproduce via the prove example + the x86 wrap
+# (see docs/dev-core-notes/). To commit a reference proof deliberately later:
+#   git add -f predicate-engine/artifacts/seal.bin
+predicate-engine/artifacts/

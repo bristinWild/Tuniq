@@ -1,0 +1,12 @@
+[package]
+name = "tuniq-prover"
+version = "0.1.0"
+edition = "2021"
+description = "Offchain x86 worker: wraps a captured succinct receipt to Groth16."
+
+# Standalone, lean: NO nssa, NO guest. Just risc0 + file I/O. The whole point —
+# this is the dumb, stateless wrap step that runs on an x86 box.
+[dependencies]
+risc0-zkvm = { version = "=3.0.5", features = ["prove"] }
+borsh = "1.5"
+anyhow = "1"
