@@ -1,15 +1,18 @@
 [workspace]
-members = ["core", ".", "methods", "integration_tests"]
-exclude = ["methods/guest"]
+members = [
+    "core",
+    ".",
+    "methods",
+    "integration_tests",
+]
+exclude = [
+    "methods/guest",
+]
 resolver = "2"
 
 [workspace.dependencies]
-nssa_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3", features = [
-    "host",
-] }
-nssa = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3", features = [
-    "test-utils",
-] }
+nssa_core = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3", features = ["host"] }
+nssa = { git = "https://github.com/logos-blockchain/logos-execution-zone.git", tag = "v0.2.0-rc3", features = ["test-utils"] }
 spel-framework = { git = "https://github.com/logos-co/spel.git", tag = "v0.3.0", package = "spel-framework" }
 spel-framework-macros = { git = "https://github.com/logos-co/spel.git", tag = "v0.3.0", package = "spel-framework-macros" }
 tuniq-shared-types = { path = "../shared-types" }
@@ -26,10 +29,9 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 correctness = { level = "deny", priority = -1 }
-suspicious = { level = "deny", priority = -1 }
-perf = { level = "deny", priority = -1 }
+suspicious  = { level = "deny", priority = -1 }
+perf        = { level = "deny", priority = -1 }
 
-# ---- the predicate PROGRAM crate lives at the workspace root ----
 [package]
 name = "predicate_program"
 version = "0.1.0"

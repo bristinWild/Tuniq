@@ -7,7 +7,4 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-nssa_core = { workspace = true }
-spel-framework-macros = { workspace = true }
-borsh = { workspace = true }
 serde = { workspace = true }

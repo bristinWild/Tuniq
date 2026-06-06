@@ -1,0 +1,15 @@
+[package]
+name = "integration_tests"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+nssa = { workspace = true }
+nssa_core = { workspace = true, features = ["host"] }
+predicate_core = { workspace = true }
+predicate-methods = { path = "../methods" }
+tuniq-shared-types = { path = "../../shared-types" }
+borsh = { workspace = true }

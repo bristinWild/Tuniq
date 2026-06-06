@@ -1,8 +1,8 @@
 //! Tuniq confidential predicate — program logic.
 //!
-//! Mirrors the lez-programs token handlers: take `AccountWithMetadata`, assert
-//! authorization, parse account data via the `#[account_type]` bridge, run the
-//! predicate. Failure is expressed by panic (the LEZ soundness mechanic): if the
-//! predicate does not hold, no valid proof can be produced.
+//! Execution lives in `check.rs`; the guest binary wraps it via SPEL.
+//! Ported from the proven Experiment 2 `confidential_predicate`.
 
-pub mod eligibility;
+pub mod check;
+
+pub use predicate_core::Instruction;

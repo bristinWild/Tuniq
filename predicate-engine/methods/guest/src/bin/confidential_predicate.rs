@@ -14,15 +14,16 @@ mod confidential_predicate {
     )]
     use super::*;
 
-    /// Evaluate `balance >= threshold` over a single shielded account.
-    /// Panics if the predicate does not hold — a false statement is unprovable.
+    /// Confidential predicate: assert the subject account's (shielded) balance
+    /// is >= threshold. A valid proof existing == the predicate held, without
+    /// revealing the balance.
     #[instruction]
-    pub fn check_eligibility(
-        account: AccountWithMetadata,
+    pub fn check_balance_over_threshold(
+        subject: AccountWithMetadata,
         threshold: u128,
     ) -> SpelResult {
         Ok(spel_framework::SpelOutput::execute(
-            predicate_program::eligibility::check_eligibility(account, threshold),
+            predicate_program::check::check_balance_over_threshold(subject, threshold),
             vec![],
         ))
     }
