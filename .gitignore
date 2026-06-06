@@ -8,7 +8,7 @@ predicate-engine/methods/guest/target/
 # Lockfiles: keep the workspace + shared-types locks (apps), drop the guest's
 # (it's a separate build; its lock is regenerated). Comment the next line out
 # if you prefer to commit every lockfile.
-predicate-engine/methods/guest/Cargo.lock
+# predicate-engine/methods/guest/Cargo.lock
 
 # Proof / journal / image-id artifacts (binary outputs from runs)
 *.bin
