@@ -1534,6 +1534,7 @@ name = "integration_tests"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "bytemuck",
  "nssa",
  "nssa_core",
  "predicate-methods",

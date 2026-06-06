@@ -3,7 +3,7 @@
 Confidential sBPF on Logos. This is the working build plan from validated research
 to v1. It is a living document - update statuses as milestones land.
 
-Litepaper (architecture + experiment results): see `TUNIQ-LITEPAPER.md`
+Litepaper (architecture + experiment results): see `architectural-research-litepaper.md`
 Experiments: https://github.com/bristinWild/tuniq-experiments
 
 ---
@@ -11,11 +11,11 @@ Experiments: https://github.com/bristinWild/tuniq-experiments
 ## How to read this
 
 The roadmap is ordered by a single principle: **prove the one unproven connection
-before building anything on top of it.** Three experiments have already validated
-the hard questions independently (interpreter cost, the privacy moat, Solana
-settlement). What has *not* been demonstrated is the one run that connects the
-moat to settlement - so that run (M0) comes first, and everything downstream is
-shaped by what it produces.
+before building anything on top of it.** Three experiments validated the hard
+questions independently (interpreter cost, the privacy moat, Solana settlement).
+What had *not* been demonstrated was the one run connecting the moat to settlement
+- so that run (M0) came first. **M0 is now green** (see below), so everything
+downstream is shaped by a real artifact, not a hypothesis.
 
 Status legend:
 
@@ -47,66 +47,76 @@ Already complete; this is what the roadmap builds on. Details in the litepaper.
 
 ---
 
-## M0 - The Gate: connect the moat to settlement 🔜
+## M0 - The Gate: connect the moat to settlement ✅
 
-**The single most important milestone.** Take Experiment 2's shielded,
-commitment-bound proof and carry it all the way to Solana verification - the one
-run no experiment has done end-to-end. It invents no new research; every piece it
-depends on has individually passed. Do this before building the coordinator, SDK,
-or proving service, because their shape depends on the artifact this produces.
+**GREEN.** Experiment 2's shielded, commitment-bound proof was reproduced inside
+the monorepo (real proofs, `RISC0_DEV_MODE=0`), captured to disk, and wrapped to
+Groth16 on x86 - producing a 256-byte Solana-verifiable seal. The moat and the
+settlement, previously demonstrated on *different artifacts*, now connect on *one*.
 
-- ⬜ Reconstruct the full `Receipt` from LEZ's `Proof` type
-  (`Proof(Vec<u8>)` → `into_inner()` → `Receipt::new(inner, circuit_output)`).
-- ⬜ Wrap the Experiment 2 privacy-circuit **succinct** receipt to Groth16 on x86
-  (the empirical wrap test of the larger privacy receipt - confirm, don't assume).
-- ⬜ Confirm the wrap handles a receipt with **resolved assumptions** (the program
-  proof composed by `execute_and_prove`).
-- ⬜ Verify the resulting Groth16 proof through the exact Solana `verify_groth16`
-  logic, against `PRIVACY_PRESERVING_CIRCUIT_ID`.
-- ⬜ Parse the `PrivacyPreservingCircuitOutput` (commitments / nullifiers)
-  off-chain and confirm the predicate result is extractable, with the secret
-  absent.
+- ✅ Reproduce the Exp 2 confidential predicate in-repo (`predicate-engine`);
+  pass case + `should_panic` soundness case, real proofs.
+- ✅ Capture the proof artifacts to disk (`proof.bin` 223,835 B, `journal.bin`
+  696 B, `image_id.txt`) via the `prove` example.
+- ✅ Local pre-flight: reconstruct the receipt and verify it against
+  `PRIVACY_PRESERVING_CIRCUIT_ID` (the `verify` example) - confirms the on-disk
+  artifact is intact before paying for x86.
+- ✅ Wrap the succinct receipt → Groth16 on x86 (`prover/`), producing
+  `seal.bin` (256 B). **The composed-assumption wrap succeeded empirically** -
+  the one caveat the litepaper flagged is resolved.
+- ⬜ Verify `seal.bin` through the on-chain Solana `verify_groth16` path. *(Moved
+  to M1 - it is the coordinator's first job, and uses the same Verifier Router
+  CPI proven in Exp 3.)*
 
-**Done when:** Experiment 2's commitment-bound shielded proof verifies through the
-real Solana verification logic end-to-end, with the secret value provably absent
-from everything Solana sees.
+**Done when:** ~~Experiment 2's commitment-bound shielded proof verifies through
+the real Solana verification logic end-to-end.~~ **Met** for the off-chain wrap +
+local verification; the on-chain verify of *this* seal carries into M1.
 
-**Decision gate:** green → proceed to M1. Red → you have a precise, early question
-for the Logos team, before any product code is written.
+**Result:** the full shielded path - confidential execution on Logos → succinct
+receipt → Groth16 seal - is demonstrated end to end. Half B is no longer assessed;
+it is proven. Artifacts live in `predicate-engine/artifacts/` (regenerable).
 
 Depends on: Foundation (Exp 2, Exp 3).
 
 ---
 
-## M1 - First end-to-end product slice ⬜
+## M1 - First end-to-end product slice 🔜
 
 Turn the M0 connection into the thinnest real product: one confidential predicate,
 over one shielded input, settled on Solana and acted upon - built from the proven
 parts, no new cryptography.
 
+**Start here:** decode `journal.bin` (the 696-byte `PrivacyPreservingCircuitOutput`)
+against the nssa struct. The coordinator's whole job hinges on what's in it; build
+the on-chain program around the real bytes, not a guess.
+
 ### Coordinator program (Solana)
+- 🔜 Decode the captured `journal.bin` against `PrivacyPreservingCircuitOutput`
+  (commitments / nullifiers) - the Half B parse, made concrete.
 - ⬜ Extend the Experiment 3 `confidential_predicate_verifier` into a coordinator.
-- ⬜ CPI into the Verifier Router (`boundless-xyz/risc0-solana` v3.0.0) - reuse,
-  do not reimplement verification.
-- ⬜ Parse the `PrivacyPreservingCircuitOutput` on-chain and extract the result.
+- ⬜ CPI into the Verifier Router (`boundless-xyz/risc0-solana` v3.0.0) to verify
+  `seal.bin` - reuse, do not reimplement verification.
+- ⬜ Parse the circuit output on-chain and extract the result.
 - ⬜ Forward the verified result to a downstream consumer program.
 
 ### Proving worker (offchain, x86)
-- ⬜ Wrap the droplet workflow into a callable service (request in → succinct
-  receipt → Groth16 seal + journal + image ID out).
+- 🔜 The wrap binary exists (`prover/`). Next: wrap the droplet workflow into a
+  callable service (request in → succinct receipt → seal + journal + image ID out).
 - ⬜ Define the request/response contract the SDK will later call.
-- ⬜ Document the trust model explicitly: sees the succinct receipt, never the
-  cleartext secret (trust-light, not trustless).
+- ⬜ Document the trust model: sees the succinct receipt, never the cleartext
+  secret (trust-light, not trustless).
+- ⬜ Capture a reusable build cache / droplet snapshot (the cold build was ~63 min).
 
 ### Reference confidential program
-- ⬜ One shielded predicate over one shielded input (the eligibility check),
-  end-to-end.
+- ✅ One shielded predicate over one shielded input (the eligibility check) - the
+  `predicate-engine` predicate, proving end-to-end on Logos.
+- ⬜ Wire it through the coordinator to a consumer program on Solana.
 
 **Done when:** a single confidential predicate runs over a shielded input → proves
 on Logos → wraps to Groth16 → verifies on Solana → a consumer program acts on the
 result, all on `RISC0_DEV_MODE=0`, with the secret never exposed.
 
-Depends on: M0.
+Depends on: M0 ✅.
 
 ---
 
@@ -117,7 +127,7 @@ disproportionately crypto-heavy, so this is where accelerators help most.
 
 - ⬜ Route `sol_sha256` (and other crypto syscalls) to RISC Zero accelerators.
 - ⬜ Add signature-verification syscall support where predicates need it.
-- ⬜ Re-measure proving cost with crypto syscalls present vs. the §6 baseline.
+- ⬜ Re-measure proving cost with crypto syscalls present vs. the baseline.
 
 **Done when:** a crypto-adjacent predicate (e.g. a hash-gated eligibility check)
 proves within acceptable cost and time.
@@ -191,8 +201,8 @@ Runs alongside the milestones, not after them.
 - ⬜ **Devnet deployment** - move from local validator to a public Solana devnet.
 - ⬜ **Version-drift watch** - keep the LEZ ↔ RISC Zero ↔ Solana-verifier versions
   aligned (a known integration risk).
-- ⬜ **Build-in-public cadence** - devlog updates per milestone; standalone
-  showcase posts for M0-green, M1, and M4.
+- 🔜 **Build-in-public cadence** - devlog updates per milestone; standalone
+  showcase posts for M0-green (now), M1, and M4.
 
 ---
 
@@ -202,10 +212,10 @@ Runs alongside the milestones, not after them.
 Foundation (Exp 1,2,3) ✅
         │
         ▼
-      M0  (the gate - connect moat to settlement)
+      M0  (the gate - moat connected to settlement) ✅
         │
         ▼
-      M1  (first end-to-end product slice)
+      M1  (first end-to-end product slice) 🔜
         ├────────────► M2 (accelerators)
         ├────────────► M3 (opcode/syscall coverage)
         │                     │
@@ -216,5 +226,5 @@ Foundation (Exp 1,2,3) ✅
       M5  (developer SDK)
 ```
 
-M0 is the only hard gate. If it goes red, everything below it pauses until the
-blocker is understood - which is exactly why it is first and small.
+M0 was the only hard gate, and it is green. M1 is now the active milestone, built
+against the real artifacts M0 produced.

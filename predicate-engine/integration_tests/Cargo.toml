@@ -14,3 +14,4 @@ predicate-methods = { path = "../methods" }
 tuniq-shared-types = { path = "../../shared-types" }
 borsh = { workspace = true }
 risc0-zkvm = { workspace = true }
+bytemuck = "1"
