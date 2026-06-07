@@ -13,9 +13,9 @@ Experiments: https://github.com/bristinWild/tuniq-experiments
 The roadmap is ordered by a single principle: **prove the one unproven connection
 before building anything on top of it.** Three experiments validated the hard
 questions independently (interpreter cost, the privacy moat, Solana settlement).
-M0 connected them; M1 turned that connection into a working on-chain program.
-**Both are now green.** Everything downstream is shaped by real artifacts, not
-hypotheses.
+M0 connected them; M1 verified the proof on Solana; M2 wired a consumer program.
+**M0, M1, and M2 are all green.** Everything downstream is shaped by real
+artifacts, not hypotheses.
 
 Status legend:
 
@@ -48,22 +48,16 @@ Already complete; this is what the roadmap builds on. Details in the litepaper.
 
 **GREEN.** Experiment 2's shielded, commitment-bound proof was reproduced inside
 the monorepo (real proofs, `RISC0_DEV_MODE=0`), captured to disk, and wrapped to
-Groth16 on x86 - producing a 256-byte Solana-verifiable seal. The moat and the
-settlement, previously demonstrated on *different artifacts*, now connect on *one*.
+Groth16 on x86 - producing a 256-byte Solana-verifiable seal.
 
-- ✅ Reproduce the Exp 2 confidential predicate in-repo (`predicate-engine`);
-  pass case + `should_panic` soundness case, real proofs.
-- ✅ Capture proof artifacts to disk (`proof.bin` 223,835 B, `journal.bin` 696 B,
-  `image_id.txt`) via the `prove` example.
-- ✅ Local pre-flight: reconstruct the receipt and verify against
-  `PRIVACY_PRESERVING_CIRCUIT_ID` (`verify` example) - artifact intact.
-- ✅ Wrap the succinct receipt → Groth16 on x86 (`prover/`), producing `seal.bin`
-  (256 B). Composed-assumption wrap succeeded empirically - the one caveat the
-  litepaper flagged is resolved.
+- ✅ Reproduce the Exp 2 confidential predicate in-repo (`predicate-engine`).
+- ✅ Capture proof artifacts to disk (`proof.bin`, `journal.bin`, `image_id.txt`).
+- ✅ Local pre-flight: verify receipt against `PRIVACY_PRESERVING_CIRCUIT_ID`.
+- ✅ Wrap succinct receipt → Groth16 on x86 (`prover/`), producing `seal.bin`.
+  Composed-assumption wrap succeeded empirically.
 
-**Result:** the full shielded path - confidential execution on Logos → succinct
-receipt → Groth16 seal - is demonstrated end to end. Half B is no longer assessed;
-it is proven.
+**Result:** the full shielded path - Logos → succinct receipt → Groth16 seal -
+is demonstrated end to end. Half B is proven.
 
 Depends on: Foundation (Exp 2, Exp 3).
 
@@ -73,146 +67,164 @@ Depends on: Foundation (Exp 2, Exp 3).
 
 **GREEN.** The coordinator Anchor program verifies the shielded proof on Solana
 through the real Verifier Router CPI and `groth_16_verifier`. The full CPI chain
-fires on real artifacts: `seal.bin` + `journal.bin` + `PRIVACY_PRESERVING_CIRCUIT_ID`.
-The nullifier PDA replay guard works. The secret never appears on the Solana side.
+fires on real artifacts. The nullifier PDA replay guard works. The secret never
+appears on the Solana side.
 
-- ✅ Decode `journal.bin` against `PrivacyPreservingCircuitOutput` (commitments /
-  nullifiers) - the Half B parse, made concrete. See `decode.rs`.
+- ✅ Decode `journal.bin` against `PrivacyPreservingCircuitOutput`. See `decode.rs`.
 - ✅ Coordinator Anchor program: CPI into Verifier Router (v3.0.0), nullifier-PDA
   replay guard, `PredicateVerified` event emission.
-- ✅ **Verify `seal.bin` through the on-chain `verify_groth16` path** — CPI into the
-  Verifier Router (`boundless-xyz/risc0-solana` v3.0.0), `groth_16_verifier` pairing
-  check passes on the *shielded* seal. This was the task moved from M0; it is the
+- ✅ **Verify `seal.bin` through the on-chain `verify_groth16` path** - the
   decisive connection between the moat and Solana settlement.
-- ✅ `verify_predicate` litesvm integration test: full CPI chain on real artifacts.
-  Commit: `de06ce3`.
-- ✅ Two non-obvious encoding facts established (see `6.m1-green.md`):
-  - `pi_a` must be **pre-negated** (BN254 G1) before passing to the verifier.
-  - `image_id` must be **LE bytes per word** (not raw hex parse).
-- ⬜ Wire the coordinator result to a downstream consumer program. *(Carries into
-  M2 - verification is done; the consumer forward is the remaining product slice.)*
+- ✅ `verify_predicate` litesvm integration test passes on real artifacts.
+- ✅ Two non-obvious encoding facts confirmed (see `6.m1-green.md`):
+  `pi_a` must be pre-negated (BN254 G1); `image_id` must be LE bytes per word.
 
-**Done when:** ~~a consumer program acts on the result~~ The Verifier Router CPI
-is green. Consumer wiring is M2's first task.
-
-**Result:**
-
-```
-initialize: ok
-VERIFY_PREDICATE: ok - shielded proof verified on Solana!
-M1 gate: GREEN
-test verify_shielded_predicate_on_solana ... ok
-```
+**Result:** `test verify_shielded_predicate_on_solana ... ok`. Commit: `de06ce3`.
 
 Depends on: M0 ✅.
 
 ---
 
-## M2 - Consumer wiring + proving service 🔜
+## M2 - Consumer wiring ✅
 
-Turn the verified coordinator into a complete product slice: a consumer program
-that acts on the result, and a callable proving service.
+**GREEN.** The coordinator CPIs into a consumer program after a shielded proof
+verifies. The consumer's `Registry` PDA increments its `verified_count` - on-chain
+state changes as a direct result of the verified proof. The full chain is now a
+composable building block.
 
-### Consumer program (Solana)
-- 🔜 Write a minimal consumer program that the coordinator CPIs into on
-  `PredicateVerified` (e.g. gates access, issues a token, records eligibility).
-- ⬜ Tighten the nullifier binding: decode the journal on-chain to extract
-  `new_nullifiers` precisely and verify the supplied nullifier matches. (The
-  substring scan was removed in M1; this is the rigorous replacement.)
+- ✅ Consumer program (`programs/consumer`): `Registry` PDA, `record_verification`
+  increments `verified_count`, `VerificationRecorded` event emission.
+- ✅ Coordinator updated: `verify_predicate` CPIs into consumer after the Verifier
+  Router CPI succeeds. Consumer program is passed as an account - any compliant
+  consumer can be wired without redeploying the coordinator.
+- ✅ Test updated: asserts `registry.verified_count == 1` after the full chain runs.
+  Not just "no error thrown" - on-chain state actually changed. Commit: `d42b238`.
+- 🔜 Tighten nullifier binding: decode the journal on-chain to extract
+  `new_nullifiers` precisely. The substring scan was removed in M1; this is the
+  rigorous replacement.
 - ⬜ Remove dead code: `journal_contains_nullifier` fn + `NullifierNotInJournal`
   error in `coordinator/lib.rs`.
 
-### Proving worker (offchain, x86)
-- ⬜ Wrap the `prover/` droplet binary into a callable service (request in →
-  succinct receipt → Groth16 seal + journal + image ID out).
+### Proving worker (offchain, x86) - carries forward
+- ⬜ Wrap `prover/` into a callable service (request in → seal + journal + image ID out).
 - ⬜ Define the request/response contract the SDK will later call.
-- ⬜ Document the trust model: sees the succinct receipt, never the cleartext
-  secret (trust-light, not trustless).
-- ⬜ Capture a reusable droplet build cache / snapshot (cold build was ~63 min).
+- ⬜ Document the trust model explicitly (trust-light, not trustless).
 
-**Done when:** a single confidential predicate proves on Logos → wraps to Groth16
-→ verifies on Solana → a consumer program acts on the result, end to end, with the
-secret never exposed.
+**Done when:** ~~a single confidential predicate proves on Logos → wraps →
+verifies → a consumer acts on the result~~ **Met** for the on-chain consumer.
+Nullifier binding tightening + proving service carry into M3.
+
+**Result:**
+
+```
+consumer initialize: ok
+coordinator initialize: ok
+VERIFY_PREDICATE + CONSUMER CPI: ok
+Registry verified_count = 1 ✓
+M2 gate: GREEN - shielded proof verified AND consumer notified.
+test verify_and_forward_to_consumer ... ok
+```
 
 Depends on: M1 ✅.
 
 ---
 
-## M3 - Accelerators ⬜
+## M3 - Security + proving service 🔜
 
-Keep crypto-adjacent confidential programs affordable. Confidential predicates are
-disproportionately crypto-heavy, so this is where accelerators help most.
+Tighten the one deferred security gap and wrap the proving worker into a callable
+service - the two pieces that carry from M2.
 
-- ⬜ Route `sol_sha256` (and other crypto syscalls) to RISC Zero accelerators.
-- ⬜ Add signature-verification syscall support where predicates need it.
-- ⬜ Re-measure proving cost with crypto syscalls vs. the baseline.
+### Nullifier binding (security)
+- 🔜 On-chain journal decode: parse `PrivacyPreservingCircuitOutput` from the
+  journal bytes to extract `new_nullifiers` precisely. Bind the caller-supplied
+  nullifier to the journal (the seal authenticates the journal; the binding
+  ensures the nullifier is *in* it).
+- 🔜 Remove dead code: `journal_contains_nullifier` + `NullifierNotInJournal`.
 
-**Done when:** a crypto-adjacent predicate (e.g. a hash-gated eligibility check)
-proves within acceptable cost and time.
+### Proving worker
+- ⬜ Wrap `prover/` into a callable HTTP service.
+- ⬜ Define the request/response contract the SDK will later call.
+- ⬜ Document the trust model: sees the succinct receipt, never the cleartext secret.
+- ⬜ Devnet deployment - move from litesvm to a real Solana devnet.
 
-Depends on: M2.
+**Done when:** the nullifier binding is tight (on-chain decode, not substring
+scan), the proving service is callable, and the coordinator + consumer deploy to
+devnet.
+
+Depends on: M2 ✅.
 
 ---
 
-## M4 - Opcode + syscall coverage ⬜
+## M4 - Accelerators ⬜
+
+Keep crypto-adjacent confidential programs affordable.
+
+- ⬜ Route `sol_sha256` (and other crypto syscalls) to RISC Zero accelerators.
+- ⬜ Add signature-verification syscall support.
+- ⬜ Re-measure proving cost with crypto syscalls vs. baseline.
+
+**Done when:** a crypto-adjacent predicate proves within acceptable cost and time.
+
+Depends on: M3.
+
+---
+
+## M5 - Opcode + syscall coverage ⬜
 
 Widen the interpreter from "demo predicate" to "the class of confidential
 predicates we actually target."
 
 - ⬜ Expand sBPF opcode coverage for realistic predicates.
 - ⬜ Implement the minimal syscall surface the target use cases require.
-- ⬜ Conformance-test interpreter behavior against the `solana-labs/rbpf` reference.
+- ⬜ Conformance-test against `solana-labs/rbpf`.
 - ⬜ Define and document the supported-program boundary.
 
 **Done when:** a representative target predicate compiles from normal Solana
 tooling and runs through the interpreter unmodified.
 
-Depends on: M2 (M3 can run in parallel).
+Depends on: M3 (M4 can run in parallel).
 
 ---
 
-## M5 - Flagship demo ⬜
+## M6 - Flagship demo ⬜
 
 The pitch-worthy artifact: a real confidential application over shielded Logos
 data, verified on Solana.
 
 - ⬜ Choose the showcase use case (sealed-bid auction *or* private eligibility).
-- ⬜ Build the full application flow on top of M2–M4.
+- ⬜ Build the full application flow on top of M3–M5.
 - ⬜ Record an end-to-end demo with the secret provably never exposed.
 - ⬜ Publish results and write-up.
 
-**Done when:** a real confidential program over shielded Logos data is demonstrated
-and recorded, settling on Solana.
+**Done when:** a real confidential program over shielded Logos data is
+demonstrated and recorded, settling on Solana.
 
-Depends on: M2, M4 (M3 strongly recommended).
+Depends on: M3, M5 (M4 strongly recommended).
 
 ---
 
-## M6 - Developer SDK ⬜
+## M7 - Developer SDK ⬜
 
 Let external developers build confidential Solana programs without leaving their stack.
 
 - ⬜ Annotation surface for marking confidential inputs (`#[confidential]` macro).
 - ⬜ Build pipeline: annotated program → sBPF + confidential manifest.
-- ⬜ Client orchestration library: submit → prove → retrieve → submit to coordinator.
-- ⬜ Developer docs + a minimal starter example.
+- ⬜ Client orchestration library.
+- ⬜ Developer docs + minimal starter example.
 
 **Done when:** an external developer can write, build, and run a confidential
 Solana program against Tuniq from their existing toolchain.
 
-Depends on: M2, M5.
+Depends on: M3, M6.
 
 ---
 
 ## Cross-cutting (ongoing)
 
-- ⬜ **Proving-service hardening** - latency budget, availability, decentralization
-  question (who runs the x86 worker, and its trust implications).
-- ⬜ **Devnet deployment** - move from local validator to a public Solana devnet.
-- ⬜ **Version-drift watch** - keep the LEZ ↔ RISC Zero ↔ Solana-verifier versions
-  aligned (a known integration risk).
-- 🔜 **Build-in-public cadence** - M0-green post (ready now), M1-green post
-  (ready now), M2 and M5 posts as they land.
+- 🔜 **Proving-service hardening** - latency budget, availability, decentralization.
+- 🔜 **Devnet deployment** - move from litesvm to a public Solana devnet (M3).
+- ⬜ **Version-drift watch** - keep LEZ ↔ RISC Zero ↔ Solana-verifier aligned.
+- 🔜 **Build-in-public cadence** - M0, M1, M2 posts ready now; M3 and M6 as they land.
 
 ---
 
@@ -228,16 +240,19 @@ Foundation (Exp 1,2,3) ✅
       M1  (coordinator verifies shielded proof on Solana) ✅
         │
         ▼
-      M2  (consumer wiring + proving service) 🔜
-        ├────────────► M3 (accelerators)
-        ├────────────► M4 (opcode/syscall coverage)
-        │                     │
-        ▼                     ▼
-      M5  (flagship demo) ◄───┘
+      M2  (consumer program wired via coordinator CPI) ✅
         │
         ▼
-      M6  (developer SDK)
+      M3  (nullifier binding + proving service + devnet) 🔜
+        ├────────────► M4 (accelerators)
+        ├────────────► M5 (opcode/syscall coverage)
+        │                     │
+        ▼                     ▼
+      M6  (flagship demo) ◄───┘
+        │
+        ▼
+      M7  (developer SDK)
 ```
 
-M0 and M1 are green. M2 is the active milestone - consumer program first,
-then the proving service wrapper.
+M0, M1, and M2 are green. M3 is the active milestone - nullifier binding first,
+then the proving service, then devnet.
