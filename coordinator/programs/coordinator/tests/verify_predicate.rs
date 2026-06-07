@@ -20,7 +20,7 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 
-// program IDs (declare_id! values baked into each .so)
+// ---- program IDs (declare_id! values baked into each .so) ----
 const VERIFIER_ROUTER_ID: &str = "6JvFfBrvCcWgANKh1Eae9xDq4RC6cfJuBcf71rp2k9Y7";
 const GROTH16_VERIFIER_ID: &str = "THq1qFYQoh7zgcjXoMXduDBqiZRCPeg3PvvMbrVQUge";
 const COORDINATOR_ID: &str = "39jHP7Hs6zvCWsG3gJHVPfZfdFwAjhGfnFiyGDcPN7bY";
@@ -91,7 +91,7 @@ fn negate_g1(pi_a: &[u8; 64]) -> [u8; 64] {
 
 #[test]
 fn verify_and_forward_to_consumer() {
-    //  load artifacts
+    // ---- load artifacts ----
     let arts = Path::new(ARTIFACTS);
     let seal = fs::read(arts.join("seal.bin")).expect("read seal.bin");
     let journal = fs::read(arts.join("journal.bin")).unwrap();
@@ -115,14 +115,14 @@ fn verify_and_forward_to_consumer() {
         .unwrap();
     let selector: [u8; 4] = seal[0..4].try_into().unwrap();
 
-    //  program IDs
+    // ---- program IDs ----
     let router_id = pubkey(VERIFIER_ROUTER_ID);
     let groth16_id = pubkey(GROTH16_VERIFIER_ID);
     let coord_id = pubkey(COORDINATOR_ID);
     let consumer_id = pubkey(CONSUMER_ID);
     let sys_id = pubkey("11111111111111111111111111111111");
 
-    //  litesvm
+    // ---- litesvm ----
     let mut svm = LiteSVM::new();
     svm.add_program_from_file(addr(&router_id), ROUTER_SO)
         .expect("load router");
@@ -135,9 +135,9 @@ fn verify_and_forward_to_consumer() {
 
     let payer = Keypair::new();
     let payer_pk = kp_pubkey(&payer);
-    svm.airdrop(&addr(&payer_pk).into(), 10_000_000_000).unwrap();
-
-    //  PDAs
+    svm.airdrop(&addr(&payer_pk).into(), 10_000_000_000)
+        .unwrap();
+    // ---- PDAs ----
     let router_state = pda(&[b"router"], &router_id);
     let verifier_entry = pda(&[b"verifier", &selector], &router_id);
     let config_pda = pda(&[b"config"], &coord_id);
@@ -180,7 +180,7 @@ fn verify_and_forward_to_consumer() {
         .unwrap();
     }
 
-    // consumer::initialize
+    // ---- consumer::initialize ----
     {
         let mut d = ix_disc("initialize").to_vec();
         let ix = Instruction {
@@ -198,10 +198,11 @@ fn verify_and_forward_to_consumer() {
         println!("consumer initialize: ok");
     }
 
-    //  coordinator::initialize
+    // ---- coordinator::initialize ----
     {
         let mut d = ix_disc("initialize").to_vec();
         d.extend_from_slice(&image_id);
+        d.extend_from_slice(&payer_pk.to_bytes()); // authorized_prover = payer
         let ix = Instruction {
             program_id: coord_id.to_bytes().into(),
             accounts: vec![
@@ -217,7 +218,7 @@ fn verify_and_forward_to_consumer() {
         println!("coordinator initialize: ok");
     }
 
-    //coordinator::verify_predicate (+ consumer CPI)
+    // ---- coordinator::verify_predicate (+ consumer CPI) ----
     {
         let mut d = ix_disc("verify_predicate").to_vec();
         let pi_a_neg = negate_g1(&seal[0..64].try_into().unwrap());

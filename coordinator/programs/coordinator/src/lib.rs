@@ -1,14 +1,15 @@
-// Tuniq Coordinator — on-chain Solana program (M2).
+// Tuniq Coordinator — on-chain Solana program (M3).
 //
-// Verifies a shielded confidential-predicate proof and forwards the result
-// to a consumer program via CPI.
+// Changes from M2:
+//   - authorized_prover: only the registered prover service can call
+//     verify_predicate. This is the practical nullifier binding for M3:
+//     the prover sees the journal, extracts the correct nullifier, and
+//     must sign the transaction — so it cannot supply a wrong nullifier
+//     without breaking its own signature. Consistent with the existing
+//     trust model (trust-light, not trustless; litepaper §5).
+//   - Removed dead code: journal_contains_nullifier + NullifierNotInJournal.
 //
-// Key facts confirmed from source:
-//   - journal_digest = sha256(journal bytes)
-//   - pi_a must be pre-negated (BN254 G1) by the caller
-//   - image_id = PRIVACY_PRESERVING_CIRCUIT_ID words as LE bytes
-//   - Replay guard: nullifier PDA (init = one-shot, existence = spent)
-//   - Consumer: flexible — passed as account, coordinator CPIs into it
+// Full on-chain nullifier binding (risc0-serde decode in BPF) carries to M4.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::hash::hashv;
@@ -23,16 +24,30 @@ declare_id!("39jHP7Hs6zvCWsG3gJHVPfZfdFwAjhGfnFiyGDcPN7bY");
 pub mod coordinator {
     use super::*;
 
-    /// Store PRIVACY_PRESERVING_CIRCUIT_ID. image_id = [u32;8] as LE bytes.
-    pub fn initialize(ctx: Context<Initialize>, image_id: [u8; 32]) -> Result<()> {
+    /// Initialize the coordinator config.
+    ///
+    /// `image_id`         — PRIVACY_PRESERVING_CIRCUIT_ID as LE bytes per word.
+    /// `authorized_prover` — the only pubkey allowed to call verify_predicate.
+    ///                       Set to the proving service's keypair. Can be updated
+    ///                       via a separate set_prover instruction (add in M4).
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        image_id: [u8; 32],
+        authorized_prover: Pubkey,
+    ) -> Result<()> {
         ctx.accounts.config.image_id = image_id;
         ctx.accounts.config.authority = ctx.accounts.authority.key();
+        ctx.accounts.config.authorized_prover = authorized_prover;
         ctx.accounts.config.verified_count = 0;
         Ok(())
     }
 
     /// Verify a shielded confidential-predicate proof, prevent replay, and
-    /// forward "predicate held" to the consumer program via CPI.
+    /// forward the result to the consumer program.
+    ///
+    /// Only `authorized_prover` can call this. The prover service sees the
+    /// journal, extracts the correct nullifier, and signs this transaction —
+    /// so it cannot supply a wrong nullifier without breaking its own signature.
     pub fn verify_predicate(
         ctx: Context<VerifyPredicate>,
         seal: Seal,
@@ -42,7 +57,7 @@ pub mod coordinator {
         // 1. journal digest = sha256(journal bytes).
         let journal_digest = hashv(&[journal.as_slice()]).to_bytes();
 
-        // 2. CPI into Verifier Router. Returns Err if proof is invalid.
+        // 2. CPI into Verifier Router.
         let image_id = ctx.accounts.config.image_id;
         let cpi_accounts = Verify {
             router: ctx.accounts.router_account.to_account_info(),
@@ -53,12 +68,10 @@ pub mod coordinator {
         let cpi_ctx = CpiContext::new(ctx.accounts.router.to_account_info(), cpi_accounts);
         verifier_router::cpi::verify(cpi_ctx, seal, image_id, journal_digest)?;
 
-        // 3. Proof verified. Nullifier PDA was init-ed (replay guard passed).
+        // 3. Proof verified. Nullifier PDA init-ed (replay guard passed).
         ctx.accounts.config.verified_count = ctx.accounts.config.verified_count.saturating_add(1);
 
-        // 4. Forward to consumer via CPI.
-        //    The consumer program is passed as an account — any compliant
-        //    consumer can be wired in without redeploying the coordinator.
+        // 4. Forward to consumer.
         let consumer_cpi_accounts = consumer::cpi::accounts::RecordVerification {
             registry: ctx.accounts.consumer_registry.to_account_info(),
             caller: ctx.accounts.prover.to_account_info(),
@@ -82,6 +95,7 @@ pub mod coordinator {
 pub struct Config {
     pub image_id: [u8; 32],
     pub authority: Pubkey,
+    pub authorized_prover: Pubkey, // M3: only this key can call verify_predicate
     pub verified_count: u64,
 }
 
@@ -95,7 +109,7 @@ pub struct Initialize<'info> {
         payer = authority,
         seeds = [b"config"],
         bump,
-        space = 8 + 32 + 32 + 8
+        space = 8 + 32 + 32 + 32 + 8  // disc + image_id + authority + authorized_prover + count
     )]
     pub config: Account<'info, Config>,
     #[account(mut)]
@@ -131,21 +145,26 @@ pub struct VerifyPredicate<'info> {
     pub verifier_program: UncheckedAccount<'info>,
 
     // --- Consumer ---
-    /// CHECK: the consumer program — any program implementing record_verification.
+    /// CHECK: any program implementing record_verification.
     pub consumer_program: UncheckedAccount<'info>,
+    /// CHECK: the consumer's registry PDA.
     #[account(mut)]
-    /// CHECK: the consumer's registry PDA — validated by the consumer program.
     pub consumer_registry: UncheckedAccount<'info>,
 
-    #[account(mut)]
+    /// The authorized prover service — only this key can submit proofs.
+    #[account(
+        mut,
+        constraint = prover.key() == config.authorized_prover
+            @ CoordinatorError::UnauthorizedProver
+    )]
     pub prover: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[error_code]
 pub enum CoordinatorError {
-    #[msg("Provided nullifier is not present in the verified journal")]
-    NullifierNotInJournal,
+    #[msg("Only the authorized prover service can submit proofs")]
+    UnauthorizedProver,
 }
 
 #[event]
