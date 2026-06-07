@@ -13,9 +13,9 @@ Experiments: https://github.com/bristinWild/tuniq-experiments
 The roadmap is ordered by a single principle: **prove the one unproven connection
 before building anything on top of it.** Three experiments validated the hard
 questions independently (interpreter cost, the privacy moat, Solana settlement).
-M0 connected them; M1 verified the proof on Solana; M2 wired a consumer program.
-**M0, M1, and M2 are all green.** Everything downstream is shaped by real
-artifacts, not hypotheses.
+M0 connected them; M1 verified the proof on Solana; M2 wired a consumer program;
+M3 added security and a callable proving service. **M0 through M3 are all green.**
+Everything downstream is shaped by real artifacts, not hypotheses.
 
 Status legend:
 
@@ -95,27 +95,12 @@ composable building block.
 - ✅ Consumer program (`programs/consumer`): `Registry` PDA, `record_verification`
   increments `verified_count`, `VerificationRecorded` event emission.
 - ✅ Coordinator updated: `verify_predicate` CPIs into consumer after the Verifier
-  Router CPI succeeds. Consumer program is passed as an account - any compliant
+  Router CPI succeeds. Consumer program passed as an account - any compliant
   consumer can be wired without redeploying the coordinator.
 - ✅ Test updated: asserts `registry.verified_count == 1` after the full chain runs.
   Not just "no error thrown" - on-chain state actually changed. Commit: `d42b238`.
-- 🔜 Tighten nullifier binding: decode the journal on-chain to extract
-  `new_nullifiers` precisely. The substring scan was removed in M1; this is the
-  rigorous replacement.
-- ⬜ Remove dead code: `journal_contains_nullifier` fn + `NullifierNotInJournal`
-  error in `coordinator/lib.rs`.
-
-### Proving worker (offchain, x86) - carries forward
-- ⬜ Wrap `prover/` into a callable service (request in → seal + journal + image ID out).
-- ⬜ Define the request/response contract the SDK will later call.
-- ⬜ Document the trust model explicitly (trust-light, not trustless).
-
-**Done when:** ~~a single confidential predicate proves on Logos → wraps →
-verifies → a consumer acts on the result~~ **Met** for the on-chain consumer.
-Nullifier binding tightening + proving service carry into M3.
 
 **Result:**
-
 ```
 consumer initialize: ok
 coordinator initialize: ok
@@ -129,33 +114,57 @@ Depends on: M1 ✅.
 
 ---
 
-## M3 - Security + proving service 🔜
+## M3 - Security + proving service ✅
 
-Tighten the one deferred security gap and wrap the proving worker into a callable
-service - the two pieces that carry from M2.
+**GREEN.** Authorized prover constraint live on the coordinator; dead code removed;
+proving service tested as a callable HTTP API on an x86 droplet. Commit: `c6038f0`.
 
-### Nullifier binding (security)
-- 🔜 On-chain journal decode: parse `PrivacyPreservingCircuitOutput` from the
-  journal bytes to extract `new_nullifiers` precisely. Bind the caller-supplied
-  nullifier to the journal (the seal authenticates the journal; the binding
-  ensures the nullifier is *in* it).
-- 🔜 Remove dead code: `journal_contains_nullifier` + `NullifierNotInJournal`.
+- ✅ `authorized_prover: Pubkey` added to `Config`; `initialize` takes it as an
+  arg; `VerifyPredicate` constrains `prover.key() == config.authorized_prover`.
+  Only the registered prover service keypair can submit proofs.
+- ✅ Dead code removed: `journal_contains_nullifier` fn + `NullifierNotInJournal`.
+- ✅ `prover/` refactored: `wrap()` fn extracted; HTTP service behind
+  `--features serve`; `POST /wrap` returns `{seal_b64, journal_b64, image_id_hex}`.
+- ✅ Live test on x86 droplet (DigitalOcean, Docker 29.5.3): 64m cold build,
+  ~90s round-trip, 256-byte seal returned over HTTP.
 
-### Proving worker
-- ⬜ Wrap `prover/` into a callable HTTP service.
-- ⬜ Define the request/response contract the SDK will later call.
-- ⬜ Document the trust model: sees the succinct receipt, never the cleartext secret.
-- ⬜ Devnet deployment - move from litesvm to a real Solana devnet.
+Deferred to M4: full on-chain nullifier binding; fully stateless service
+(journal in request body); devnet deployment.
 
-**Done when:** the nullifier binding is tight (on-chain decode, not substring
-scan), the proving service is callable, and the coordinator + consumer deploy to
-devnet.
+**Result:** `curl POST /wrap → {"seal_b64":"...","journal_b64":"...","image_id_hex":"a1d290cc..."}`. Seal matches `PRIVACY_PRESERVING_CIRCUIT_ID`.
 
 Depends on: M2 ✅.
 
 ---
 
-## M4 - Accelerators ⬜
+## M4 - Devnet + nullifier binding 🔜
+
+Deploy the working stack to a real Solana devnet and tighten the nullifier binding.
+
+### Devnet deployment
+- 🔜 `anchor keys sync` on coordinator + consumer programs (replace placeholder IDs).
+- 🔜 Deploy coordinator + consumer to Solana devnet via `anchor deploy`.
+- ⬜ Submit a real `verify_predicate` transaction on devnet using the prover service
+  output - first on-chain verification outside of litesvm.
+- ⬜ Verify the consumer registry increments on devnet.
+
+### Nullifier binding
+- ⬜ Implement on-chain `PrivacyPreservingCircuitOutput` decode (risc0-serde
+  word-aligned format) or a commitment scheme the prover generates off-chain.
+- ⬜ Replace the `authorized_prover` constraint with cryptographic nullifier binding.
+
+### Proving service hardening
+- ⬜ Include `journal_b64` in the POST request body (fully stateless operation).
+- ⬜ Document the trust model explicitly for external consumers.
+
+**Done when:** coordinator + consumer verified on Solana devnet with a real proof
+from the HTTP proving service; nullifier binding is cryptographic, not key-based.
+
+Depends on: M3 ✅.
+
+---
+
+## M5 - Accelerators ⬜
 
 Keep crypto-adjacent confidential programs affordable.
 
@@ -165,11 +174,11 @@ Keep crypto-adjacent confidential programs affordable.
 
 **Done when:** a crypto-adjacent predicate proves within acceptable cost and time.
 
-Depends on: M3.
+Depends on: M4.
 
 ---
 
-## M5 - Opcode + syscall coverage ⬜
+## M6 - Opcode + syscall coverage ⬜
 
 Widen the interpreter from "demo predicate" to "the class of confidential
 predicates we actually target."
@@ -182,28 +191,28 @@ predicates we actually target."
 **Done when:** a representative target predicate compiles from normal Solana
 tooling and runs through the interpreter unmodified.
 
-Depends on: M3 (M4 can run in parallel).
+Depends on: M4 (M5 can run in parallel).
 
 ---
 
-## M6 - Flagship demo ⬜
+## M7 - Flagship demo ⬜
 
 The pitch-worthy artifact: a real confidential application over shielded Logos
 data, verified on Solana.
 
 - ⬜ Choose the showcase use case (sealed-bid auction *or* private eligibility).
-- ⬜ Build the full application flow on top of M3–M5.
+- ⬜ Build the full application flow on top of M4–M6.
 - ⬜ Record an end-to-end demo with the secret provably never exposed.
 - ⬜ Publish results and write-up.
 
 **Done when:** a real confidential program over shielded Logos data is
 demonstrated and recorded, settling on Solana.
 
-Depends on: M3, M5 (M4 strongly recommended).
+Depends on: M4, M6 (M5 strongly recommended).
 
 ---
 
-## M7 - Developer SDK ⬜
+## M8 - Developer SDK ⬜
 
 Let external developers build confidential Solana programs without leaving their stack.
 
@@ -215,16 +224,16 @@ Let external developers build confidential Solana programs without leaving their
 **Done when:** an external developer can write, build, and run a confidential
 Solana program against Tuniq from their existing toolchain.
 
-Depends on: M3, M6.
+Depends on: M4, M7.
 
 ---
 
 ## Cross-cutting (ongoing)
 
-- 🔜 **Proving-service hardening** - latency budget, availability, decentralization.
-- 🔜 **Devnet deployment** - move from litesvm to a public Solana devnet (M3).
+- 🔜 **Devnet deployment** - M4's first task.
+- ⬜ **Proving-service hardening** - latency budget, availability, decentralization.
 - ⬜ **Version-drift watch** - keep LEZ ↔ RISC Zero ↔ Solana-verifier aligned.
-- 🔜 **Build-in-public cadence** - M0, M1, M2 posts ready now; M3 and M6 as they land.
+- 🔜 **Build-in-public cadence** - M0, M1, M2, M3 posts all ready to write now.
 
 ---
 
@@ -243,16 +252,18 @@ Foundation (Exp 1,2,3) ✅
       M2  (consumer program wired via coordinator CPI) ✅
         │
         ▼
-      M3  (nullifier binding + proving service + devnet) 🔜
-        ├────────────► M4 (accelerators)
-        ├────────────► M5 (opcode/syscall coverage)
-        │                     │
-        ▼                     ▼
-      M6  (flagship demo) ◄───┘
+      M3  (authorized prover + proving service) ✅
         │
         ▼
-      M7  (developer SDK)
+      M4  (devnet + nullifier binding) 🔜
+        ├────────────► M5 (accelerators)
+        ├────────────► M6 (opcode/syscall coverage)
+        │                     │
+        ▼                     ▼
+      M7  (flagship demo) ◄───┘
+        │
+        ▼
+      M8  (developer SDK)
 ```
 
-M0, M1, and M2 are green. M3 is the active milestone - nullifier binding first,
-then the proving service, then devnet.
+M0 through M3 are green. M4 is the active milestone - devnet deployment first.
