@@ -4,9 +4,18 @@ version = "0.1.0"
 edition = "2021"
 description = "Offchain x86 worker: wraps a captured succinct receipt to Groth16."
 
-# Standalone, lean: NO nssa, NO guest. Just risc0 + file I/O. The whole point —
-# this is the dumb, stateless wrap step that runs on an x86 box.
+[features]
+default = []
+serve = ["axum", "tokio", "base64", "serde", "serde_json"]
+
 [dependencies]
 risc0-zkvm = { version = "=3.0.5", features = ["prove"] }
 borsh = "1.5"
 anyhow = "1"
+
+# HTTP service deps (only with --features serve)
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+base64 = { version = "0.22", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
