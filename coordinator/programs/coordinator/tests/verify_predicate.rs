@@ -24,7 +24,7 @@ use solana_transaction::Transaction;
 const VERIFIER_ROUTER_ID: &str = "6JvFfBrvCcWgANKh1Eae9xDq4RC6cfJuBcf71rp2k9Y7";
 const GROTH16_VERIFIER_ID: &str = "THq1qFYQoh7zgcjXoMXduDBqiZRCPeg3PvvMbrVQUge";
 const COORDINATOR_ID: &str = "39jHP7Hs6zvCWsG3gJHVPfZfdFwAjhGfnFiyGDcPN7bY";
-const CONSUMER_ID: &str = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS";
+const CONSUMER_ID: &str = "Gv1x7gNnbL94uuQf5s92j6DZ93u4e5aaWWt1nYfDPHWQ";
 
 // ---- artifact paths ----
 const ARTIFACTS: &str = "../../../predicate-engine/artifacts";

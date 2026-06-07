@@ -9,7 +9,7 @@
 
 use anchor_lang::prelude::*;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("Gv1x7gNnbL94uuQf5s92j6DZ93u4e5aaWWt1nYfDPHWQ");
 
 #[program]
 pub mod consumer {
