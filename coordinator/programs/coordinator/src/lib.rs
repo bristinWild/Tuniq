@@ -1,22 +1,14 @@
-// Tuniq Coordinator — on-chain Solana program (M1).
+// Tuniq Coordinator — on-chain Solana program (M2).
 //
-// Verifies that a SHIELDED confidential predicate held — `balance >= threshold`
-// over a commitment-bound Logos account — WITHOUT the balance ever touching
-// Solana, then forwards "predicate held" to consumers and prevents replay.
+// Verifies a shielded confidential-predicate proof and forwards the result
+// to a consumer program via CPI.
 //
-// Three differences from the Exp 3 standalone verifier, all forced by the
-// shielded (Half B) path and confirmed against source:
-//   1. No EligibilityResult to decode. The journal is a
-//      PrivacyPreservingCircuitOutput (commitments/nullifiers, no boolean).
-//      Verification IS the result: a valid proof == the predicate held.
-//   2. Image id is PRIVACY_PRESERVING_CIRCUIT_ID (the circuit), not a guest id.
-//   3. Replay guard: the shielded note's nullifier is unknown to Solana, so a
-//      valid (seal, journal) pair could be resubmitted forever. A nullifier PDA
-//      makes each proof one-shot.
-//
-// journal_digest = sha256(journal) — the router/groth16 verifier wraps it into
-// the ReceiptClaim itself (hash_claim -> hash_output). Confirmed in Exp 3's
-// my_proof_test and the groth_16_verifier source.
+// Key facts confirmed from source:
+//   - journal_digest = sha256(journal bytes)
+//   - pi_a must be pre-negated (BN254 G1) by the caller
+//   - image_id = PRIVACY_PRESERVING_CIRCUIT_ID words as LE bytes
+//   - Replay guard: nullifier PDA (init = one-shot, existence = spent)
+//   - Consumer: flexible — passed as account, coordinator CPIs into it
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::hash::hashv;
@@ -31,9 +23,7 @@ declare_id!("39jHP7Hs6zvCWsG3gJHVPfZfdFwAjhGfnFiyGDcPN7bY");
 pub mod coordinator {
     use super::*;
 
-    /// Store the PRIVACY_PRESERVING_CIRCUIT_ID so only proofs from the real
-    /// Logos privacy circuit are accepted. `image_id` is the [u32; 8] circuit id
-    /// converted to 32 bytes (each word little-endian).
+    /// Store PRIVACY_PRESERVING_CIRCUIT_ID. image_id = [u32;8] as LE bytes.
     pub fn initialize(ctx: Context<Initialize>, image_id: [u8; 32]) -> Result<()> {
         ctx.accounts.config.image_id = image_id;
         ctx.accounts.config.authority = ctx.accounts.authority.key();
@@ -41,26 +31,18 @@ pub mod coordinator {
         Ok(())
     }
 
-    /// Verify a shielded confidential-predicate proof and consume its nullifier.
-    ///
-    /// `nullifier` is the 32-byte nullifier from the journal's `new_nullifiers`.
-    /// It seeds a PDA that is `init`-ed here: first submission succeeds, any
-    /// resubmission of the same proof fails (the PDA already exists) — one-shot.
-    ///
-    /// We bind the passed `nullifier` to the journal so a caller cannot pair a
-    /// real proof with an unrelated (unused) nullifier to dodge the guard.
+    /// Verify a shielded confidential-predicate proof, prevent replay, and
+    /// forward "predicate held" to the consumer program via CPI.
     pub fn verify_predicate(
         ctx: Context<VerifyPredicate>,
         seal: Seal,
         journal: Vec<u8>,
         nullifier: [u8; 32],
     ) -> Result<()> {
-        // (a) — nullifier binding tightened in M2 (journal decode on-chain)
-        // (b) journal digest = sha256(journal). The verifier builds the claim.
+        // 1. journal digest = sha256(journal bytes).
         let journal_digest = hashv(&[journal.as_slice()]).to_bytes();
 
-        // (c) CPI verify against the privacy-circuit image id. `?` (not unwrap)
-        //     so a failed verification returns a clean error.
+        // 2. CPI into Verifier Router. Returns Err if proof is invalid.
         let image_id = ctx.accounts.config.image_id;
         let cpi_accounts = Verify {
             router: ctx.accounts.router_account.to_account_info(),
@@ -71,27 +53,29 @@ pub mod coordinator {
         let cpi_ctx = CpiContext::new(ctx.accounts.router.to_account_info(), cpi_accounts);
         verifier_router::cpi::verify(cpi_ctx, seal, image_id, journal_digest)?;
 
-        // (d) Verified AND the nullifier PDA was newly created (see Accounts):
-        //     the predicate provably held and this proof has not been used before.
+        // 3. Proof verified. Nullifier PDA was init-ed (replay guard passed).
         ctx.accounts.config.verified_count = ctx.accounts.config.verified_count.saturating_add(1);
+
+        // 4. Forward to consumer via CPI.
+        //    The consumer program is passed as an account — any compliant
+        //    consumer can be wired in without redeploying the coordinator.
+        let consumer_cpi_accounts = consumer::cpi::accounts::RecordVerification {
+            registry: ctx.accounts.consumer_registry.to_account_info(),
+            caller: ctx.accounts.prover.to_account_info(),
+        };
+        let consumer_cpi_ctx = CpiContext::new(
+            ctx.accounts.consumer_program.to_account_info(),
+            consumer_cpi_accounts,
+        );
+        consumer::cpi::record_verification(consumer_cpi_ctx, nullifier)?;
 
         emit!(PredicateVerified {
             by: ctx.accounts.prover.key(),
             nullifier,
         });
 
-        // A consumer program would be invoked here (CPI) or read the emitted
-        // event / the spent-nullifier PDA as the trusted "predicate held" signal.
         Ok(())
     }
-}
-
-/// Scan the journal bytes for the 32-byte nullifier. The journal is a
-/// risc0-serde-encoded PrivacyPreservingCircuitOutput; the nullifier bytes
-/// appear within it. A substring check is sufficient to bind caller-supplied
-/// `nullifier` to this journal (the seal already authenticates the journal).
-fn journal_contains_nullifier(journal: &[u8], nullifier: &[u8; 32]) -> bool {
-    journal.windows(32).any(|w| w == nullifier.as_slice())
 }
 
 #[account]
@@ -101,7 +85,6 @@ pub struct Config {
     pub verified_count: u64,
 }
 
-/// Marker PDA proving a given nullifier has been consumed. Existence == spent.
 #[account]
 pub struct SpentNullifier {}
 
@@ -126,7 +109,6 @@ pub struct VerifyPredicate<'info> {
     #[account(mut, seeds = [b"config"], bump)]
     pub config: Account<'info, Config>,
 
-    /// Replay guard: init fails if this nullifier was already consumed.
     #[account(
         init,
         payer = prover,
@@ -136,7 +118,7 @@ pub struct VerifyPredicate<'info> {
     )]
     pub spent_nullifier: Account<'info, SpentNullifier>,
 
-    // --- RISC Zero Verifier Router (reuse; proven in Exp 3) ---
+    // --- RISC Zero Verifier Router ---
     pub router: Program<'info, VerifierRouterProgram>,
     pub router_account: Account<'info, VerifierRouter>,
     #[account(
@@ -147,6 +129,13 @@ pub struct VerifyPredicate<'info> {
     pub verifier_entry: Account<'info, VerifierEntry>,
     /// CHECK: validated by the router program.
     pub verifier_program: UncheckedAccount<'info>,
+
+    // --- Consumer ---
+    /// CHECK: the consumer program — any program implementing record_verification.
+    pub consumer_program: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: the consumer's registry PDA — validated by the consumer program.
+    pub consumer_registry: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub prover: Signer<'info>,

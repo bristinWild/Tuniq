@@ -932,16 +932,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "consumer"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "hex",
+]
+
+[[package]]
 name = "coordinator"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "borsh 0.10.4",
+ "consumer",
  "groth_16_verifier",
  "litesvm",
  "solana-account 3.4.0",
+ "solana-instruction 3.4.0",
  "solana-keypair",
- "solana-message 3.1.0",
+ "solana-sdk-ids 3.1.0",
  "solana-signer",
  "solana-transaction",
  "verifier_router",
