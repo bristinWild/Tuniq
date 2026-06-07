@@ -226,8 +226,9 @@ fn verify_and_forward_to_consumer() {
         d.extend_from_slice(&pi_a_neg);
         d.extend_from_slice(&seal[64..192]);
         d.extend_from_slice(&seal[192..256]);
-        d.extend_from_slice(&(journal.len() as u32).to_le_bytes());
-        d.extend_from_slice(&journal);
+        // journal_digest = sha256(journal), computed off-chain
+        let journal_digest: [u8; 32] = solana_sdk::hash::hash(&journal).to_bytes();
+        d.extend_from_slice(&journal_digest);
         d.extend_from_slice(&nullifier);
 
         let ix = Instruction {

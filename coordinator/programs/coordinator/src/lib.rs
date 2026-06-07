@@ -12,7 +12,6 @@
 // Full on-chain nullifier binding (risc0-serde decode in BPF) carries to M4.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::hash::hashv;
 use verifier_router::cpi::accounts::Verify;
 use verifier_router::program::VerifierRouter as VerifierRouterProgram;
 use verifier_router::state::{VerifierEntry, VerifierRouter};
@@ -51,11 +50,10 @@ pub mod coordinator {
     pub fn verify_predicate(
         ctx: Context<VerifyPredicate>,
         seal: Seal,
-        journal: Vec<u8>,
+        journal_digest: [u8; 32],
         nullifier: [u8; 32],
     ) -> Result<()> {
-        // 1. journal digest = sha256(journal bytes).
-        let journal_digest = hashv(&[journal.as_slice()]).to_bytes();
+        // journal_digest is sha256(journal) — computed off-chain by the prover service.
 
         // 2. CPI into Verifier Router.
         let image_id = ctx.accounts.config.image_id;
@@ -118,7 +116,7 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(seal: Seal, journal: Vec<u8>, nullifier: [u8; 32])]
+#[instruction(seal: Seal, journal_digest: [u8; 32], nullifier: [u8; 32])]
 pub struct VerifyPredicate<'info> {
     #[account(mut, seeds = [b"config"], bump)]
     pub config: Account<'info, Config>,
