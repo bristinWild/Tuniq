@@ -21,8 +21,8 @@ use solana_sdk::{
 use std::fs;
 use std::str::FromStr;
 
-const VERIFIER_ROUTER_ID: &str = "6C7Xkz3jC19aEm5i3fiP4AicfWVy6wdxWWhFtq4Vkr3Q";
-const GROTH16_VERIFIER_ID: &str = "BRFJjGGWBWmb53P48rU3P4MrxMcsXqypPq4JzGi3gctZ";
+const VERIFIER_ROUTER_ID: &str = "CfAo7ygm9xwDro418VBhaPyk2KMFoLhTmpumDA1BRD4z";
+const GROTH16_VERIFIER_ID: &str = "8RPusmPr7tdS5jo1piCTEFXBYVxfQqDiLZMYurDYzuqM";
 const COORDINATOR_ID: &str = "39jHP7Hs6zvCWsG3gJHVPfZfdFwAjhGfnFiyGDcPN7bY";
 const CONSUMER_ID: &str = "Gv1x7gNnbL94uuQf5s92j6DZ93u4e5aaWWt1nYfDPHWQ";
 const NULLIFIER_HEX: &str = "39e15eadcbc684bfca46f76bec4182d71cf5b26833d6e20af0b283515d9f92b2";
@@ -160,7 +160,7 @@ fn main() -> anyhow::Result<()> {
         let mut d = disc("add_verifier").to_vec();
         d.extend_from_slice(&selector); // selector: [u8;4]
         // groth16 ProgramData address (from `solana program show`)
-        let groth16_program_data = Pubkey::from_str("9ARmMtyf5oLG4b9FebynH2oM9m4pcLDd9D8tA9BZgf9w")?;
+        let groth16_program_data = Pubkey::from_str("6mYE6iDv6c7PPQBPMq8NqbHdZHdikDWtD17Zk3Hvv4zj")?;
         let ix = Instruction {
             program_id: router_id,
             accounts: vec![
