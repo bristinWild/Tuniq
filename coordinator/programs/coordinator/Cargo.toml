@@ -22,6 +22,7 @@ groth_16_verifier = { git = "https://github.com/boundless-xyz/risc0-solana", tag
 consumer = { path = "../consumer", features = ["cpi"] }
 
 [dev-dependencies]
+hex = "0.4"
 litesvm = "0.10"
 solana-keypair = "3"
 solana-signer = "3"

@@ -1,10 +1,18 @@
-//! M2 integration test: verify the shielded proof AND confirm the consumer
-//! program's registry increments via the coordinator → consumer CPI chain.
+//! M5 integration test: verify the shielded proof with full on-chain
+//! nullifier binding, and confirm the consumer program's registry
+//! increments via the coordinator → consumer CPI chain.
 //!
 //! Full chain:
+//!   coordinator::store_journal        (stores journal bytes, PDA = sha256(journal))
 //!   coordinator::verify_predicate
+//!     → re-checks sha256(journal_account.data) == journal_digest
+//!     → decodes new_nullifiers[nullifier_index] from the journal on-chain
+//!     → requires decoded nullifier == claimed_nullifier
 //!     → verifier_router CPI (Groth16 pairing check)
 //!     → consumer::record_verification CPI (counter increments)
+//!
+//! No `authorized_prover` / signer-based trust: the proof + journal are the
+//! only authorization. Anyone can call store_journal and verify_predicate.
 //!
 //! Run: cargo test -p coordinator --test verify_predicate -- --nocapture
 
@@ -21,8 +29,8 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 
 // ---- program IDs (declare_id! values baked into each .so) ----
-const VERIFIER_ROUTER_ID: &str = "6JvFfBrvCcWgANKh1Eae9xDq4RC6cfJuBcf71rp2k9Y7";
-const GROTH16_VERIFIER_ID: &str = "THq1qFYQoh7zgcjXoMXduDBqiZRCPeg3PvvMbrVQUge";
+const VERIFIER_ROUTER_ID: &str = "CfAo7ygm9xwDro418VBhaPyk2KMFoLhTmpumDA1BRD4z";
+const GROTH16_VERIFIER_ID: &str = "8RPusmPr7tdS5jo1piCTEFXBYVxfQqDiLZMYurDYzuqM";
 const COORDINATOR_ID: &str = "39jHP7Hs6zvCWsG3gJHVPfZfdFwAjhGfnFiyGDcPN7bY";
 const CONSUMER_ID: &str = "Gv1x7gNnbL94uuQf5s92j6DZ93u4e5aaWWt1nYfDPHWQ";
 
@@ -107,13 +115,19 @@ fn verify_and_forward_to_consumer() {
         .try_into()
         .unwrap();
 
+    // The nullifier we EXPECT to decode from the journal (word offset 106,
+    // verified against the real M0–M4 artifact). The test asserts the
+    // on-chain decoder produces this value independently — it is not trusted
+    // input, it's the expected output of decode_nullifier_from_journal.
     let nul_hex = "39e15eadcbc684bfca46f76bec4182d71cf5b26833d6e20af0b283515d9f92b2";
-    let nullifier: [u8; 32] = (0..32)
+    let claimed_nullifier: [u8; 32] = (0..32)
         .map(|i| u8::from_str_radix(&nul_hex[i * 2..i * 2 + 2], 16).unwrap())
         .collect::<Vec<_>>()
         .try_into()
         .unwrap();
     let selector: [u8; 4] = seal[0..4].try_into().unwrap();
+    let nullifier_index: u8 = 0;
+    let journal_digest: [u8; 32] = hash(&journal).to_bytes();
 
     // ---- program IDs ----
     let router_id = pubkey(VERIFIER_ROUTER_ID);
@@ -137,11 +151,13 @@ fn verify_and_forward_to_consumer() {
     let payer_pk = kp_pubkey(&payer);
     svm.airdrop(&addr(&payer_pk).into(), 10_000_000_000)
         .unwrap();
+
     // ---- PDAs ----
     let router_state = pda(&[b"router"], &router_id);
     let verifier_entry = pda(&[b"verifier", &selector], &router_id);
     let config_pda = pda(&[b"config"], &coord_id);
-    let spent_nul_pda = pda(&[b"nullifier", &nullifier], &coord_id);
+    let journal_account_pda = pda(&[b"journal", &journal_digest], &coord_id);
+    let spent_nul_pda = pda(&[b"nullifier", &claimed_nullifier], &coord_id);
     let registry_pda = pda(&[b"registry"], &consumer_id);
 
     // ---- seed router state (bypass INITIAL_OWNER) ----
@@ -182,7 +198,7 @@ fn verify_and_forward_to_consumer() {
 
     // ---- consumer::initialize ----
     {
-        let mut d = ix_disc("initialize").to_vec();
+        let d = ix_disc("initialize").to_vec();
         let ix = Instruction {
             program_id: consumer_id.to_bytes().into(),
             accounts: vec![
@@ -198,11 +214,10 @@ fn verify_and_forward_to_consumer() {
         println!("consumer initialize: ok");
     }
 
-    // ---- coordinator::initialize ----
+    // ---- coordinator::initialize (no authorized_prover — anyone can call) ----
     {
         let mut d = ix_disc("initialize").to_vec();
         d.extend_from_slice(&image_id);
-        d.extend_from_slice(&payer_pk.to_bytes()); // authorized_prover = payer
         let ix = Instruction {
             program_id: coord_id.to_bytes().into(),
             accounts: vec![
@@ -218,30 +233,15 @@ fn verify_and_forward_to_consumer() {
         println!("coordinator initialize: ok");
     }
 
-    // ---- coordinator::verify_predicate (+ consumer CPI) ----
+    // ---- coordinator::store_journal ----
     {
-        let mut d = ix_disc("verify_predicate").to_vec();
-        let pi_a_neg = negate_g1(&seal[0..64].try_into().unwrap());
-        d.extend_from_slice(&selector);
-        d.extend_from_slice(&pi_a_neg);
-        d.extend_from_slice(&seal[64..192]);
-        d.extend_from_slice(&seal[192..256]);
-        // journal_digest = sha256(journal), computed off-chain
-        let journal_digest: [u8; 32] = anchor_lang::solana_program::hash::hash(&journal).to_bytes();
-        d.extend_from_slice(&journal_digest);
-        d.extend_from_slice(&nullifier);
-
+        let mut d = ix_disc("store_journal").to_vec();
+        d.extend_from_slice(&(journal.len() as u32).to_le_bytes());
+        d.extend_from_slice(&journal);
         let ix = Instruction {
             program_id: coord_id.to_bytes().into(),
             accounts: vec![
-                meta(&config_pda, true, false),
-                meta(&spent_nul_pda, true, false),
-                meta(&router_id, false, false),
-                meta(&router_state, false, false),
-                meta(&verifier_entry, false, false),
-                meta(&groth16_id, false, false),
-                meta(&consumer_id, false, false), // consumer_program
-                meta(&registry_pda, true, false), // consumer_registry
+                meta(&journal_account_pda, true, false),
                 meta(&payer_pk, true, true),
                 meta(&sys_id, false, false),
             ],
@@ -250,8 +250,44 @@ fn verify_and_forward_to_consumer() {
         let bh = svm.latest_blockhash();
         let tx = Transaction::new_signed_with_payer(&[ix], Some(&payer.pubkey()), &[&payer], bh);
         svm.send_transaction(tx)
-            .expect("verify_predicate + consumer CPI");
-        println!("VERIFY_PREDICATE + CONSUMER CPI: ok");
+            .expect("coordinator::store_journal");
+        println!("store_journal: ok (journal_account = {journal_account_pda})");
+    }
+
+    // ---- coordinator::verify_predicate (+ on-chain nullifier decode + consumer CPI) ----
+    {
+        let mut d = ix_disc("verify_predicate").to_vec();
+        let pi_a_neg = negate_g1(&seal[0..64].try_into().unwrap());
+        d.extend_from_slice(&selector);
+        d.extend_from_slice(&pi_a_neg);
+        d.extend_from_slice(&seal[64..192]);
+        d.extend_from_slice(&seal[192..256]);
+        d.extend_from_slice(&journal_digest);
+        d.push(nullifier_index);
+        d.extend_from_slice(&claimed_nullifier);
+
+        let ix = Instruction {
+            program_id: coord_id.to_bytes().into(),
+            accounts: vec![
+                meta(&config_pda, true, false),
+                meta(&journal_account_pda, false, false),
+                meta(&spent_nul_pda, true, false),
+                meta(&router_id, false, false),
+                meta(&router_state, false, false),
+                meta(&verifier_entry, false, false),
+                meta(&groth16_id, false, false),
+                meta(&consumer_id, false, false), // consumer_program
+                meta(&registry_pda, true, false), // consumer_registry
+                meta(&payer_pk, true, true),      // caller
+                meta(&sys_id, false, false),
+            ],
+            data: d,
+        };
+        let bh = svm.latest_blockhash();
+        let tx = Transaction::new_signed_with_payer(&[ix], Some(&payer.pubkey()), &[&payer], bh);
+        svm.send_transaction(tx)
+            .expect("verify_predicate + on-chain nullifier decode + consumer CPI");
+        println!("VERIFY_PREDICATE (on-chain nullifier binding) + CONSUMER CPI: ok");
     }
 
     // ---- assert the registry actually incremented ----
@@ -265,5 +301,5 @@ fn verify_and_forward_to_consumer() {
         "registry.verified_count should be 1 after one proof"
     );
     println!("Registry verified_count = {count} ✓");
-    println!("M2 gate: GREEN — shielded proof verified AND consumer notified.");
+    println!("M5 gate: GREEN — nullifier decoded on-chain from the journal, proof verified, consumer notified.");
 }
