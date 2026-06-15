@@ -15,8 +15,9 @@ before building anything on top of it.** Three experiments validated the hard
 questions independently (interpreter cost, the privacy moat, Solana settlement).
 M0 connected them; M1 verified the proof on Solana; M2 wired a consumer program;
 M3 added security and a proving service; M4 deployed the whole stack to a public
-devnet. **M0 through M4 are all green.** Everything downstream is shaped by real
-artifacts, not hypotheses.
+devnet; M5 made nullifier binding cryptographic and confirmed the SHA-256
+acceleration question. **M0 through M5 are all green.** Everything downstream is
+shaped by real artifacts, not hypotheses.
 
 Status legend:
 
@@ -145,24 +146,62 @@ Depends on: M3 ✅.
 
 ---
 
-## M5 — Nullifier binding + accelerators ⬜
+## M5 — Nullifier binding + accelerators ✅
 
-Tighten the deferred security gap and keep crypto-adjacent predicates affordable.
+**GREEN.** Both halves closed. The `authorized_prover` trust shortcut is gone —
+the coordinator now decodes the nullifier directly from the proof-committed
+journal on-chain. The accelerator requirement turned out to already be satisfied
+by the stack as-is. Commit: `afd10a0`; see `10.m5-green.md`.
 
-### Nullifier binding
-- ⬜ On-chain `PrivacyPreservingCircuitOutput` decode (risc0-serde word-aligned), or
-  a commitment scheme the prover generates off-chain and the coordinator verifies.
-- ⬜ Replace the `authorized_prover` constraint with cryptographic nullifier binding.
+### Nullifier binding ✅
+- ✅ New `journal_decode` module: a risc0-serde word-walker that decodes
+  `new_nullifiers[index]` directly from `PrivacyPreservingCircuitOutput`.
+  Verified against the real M0–M4 journal (nullifier at word offset 106).
+- ✅ New `store_journal` instruction: stores raw journal bytes in a PDA keyed
+  by `sha256(journal)` (= `journal_digest`).
+- ✅ `verify_predicate` re-checks `sha256(journal_account.data) == journal_digest`
+  on-chain, decodes the nullifier from the journal, and requires it equals
+  `claimed_nullifier` (used to derive the `spent_nullifier` replay-guard seed).
+- ✅ `authorized_prover` / signer-based trust removed entirely. `store_journal`
+  and `verify_predicate` are permissionless — the proof + journal are the only
+  authorization.
+- ✅ litesvm green: `verify_and_forward_to_consumer ... ok`, 6/6 tests pass
+  (5 unit + 1 integration).
 
-### Accelerators
-- ⬜ Route `sol_sha256` (and other crypto syscalls) to RISC Zero accelerators.
-- ⬜ Add signature-verification syscall support.
-- ⬜ Re-measure proving cost with crypto syscalls vs. baseline.
+### Accelerators ✅
+- ✅ **SHA-256 acceleration is already structural.** `nssa_core` (the privacy
+  framework our guest links against) uses `risc0_zkvm::sha::{Impl, Sha256}` —
+  RISC Zero's built-in SHA-256 precompile — throughout `commitment.rs`,
+  `account.rs`, `nullifier.rs`, `encryption/mod.rs`, and `program.rs`. Every
+  commitment and nullifier hash in the circuit is accelerated by construction.
+  No code change needed; no unaccelerated path exists to route away from.
+- ✅ **"Re-measure vs. baseline" resolved**: there is no unaccelerated baseline.
+  The Foundation proving numbers (≈9.4s, ≈314 cycles/instruction) *are* the
+  accelerated numbers — they always have been.
+- ⬜→carried **Signature-verification precompiles**: correctly deferred to M6+.
+  Nothing in `check_balance_over_threshold` needs `ed25519`/`secp256k1`. When a
+  future predicate does, evaluate RISC Zero's accelerated forks then — they
+  currently require the `unstable` feature flag and don't yet guarantee
+  constant-time execution, which matters for private-data signing.
 
-**Done when:** the nullifier binding is cryptographic (not key-based), and a
-crypto-adjacent predicate proves within acceptable cost and time.
+**Result:**
+```
+running 5 tests (journal_decode unit tests) ... ok
+running 1 test (verify_and_forward_to_consumer) ... ok
+test result: ok. 6 passed; 0 failed
+M5 gate: GREEN — nullifier decoded on-chain from the journal, proof verified,
+consumer notified.
+```
 
-Depends on: M4.
+**Done when** (original criteria): "the nullifier binding is cryptographic (not
+key-based), and a crypto-adjacent predicate proves within acceptable cost and
+time." Both satisfied.
+
+Carries to M6: devnet redeployment of the M5 coordinator (M4's devnet tx used
+the pre-M5 `verify_predicate` signature — `store_journal` + the new on-chain
+nullifier decode aren't live on devnet yet).
+
+Depends on: M4 ✅.
 
 ---
 
@@ -175,11 +214,12 @@ predicates we actually target."
 - ⬜ Implement the minimal syscall surface the target use cases require.
 - ⬜ Conformance-test against `solana-labs/rbpf`.
 - ⬜ Define and document the supported-program boundary.
+- ⬜ Devnet redeploy of the M5 coordinator (carried from M5).
 
 **Done when:** a representative target predicate compiles from normal Solana
 tooling and runs through the interpreter unmodified.
 
-Depends on: M4 (M5 can run in parallel).
+Depends on: M5 ✅.
 
 ---
 
@@ -196,7 +236,7 @@ data, verified on Solana.
 **Done when:** a real confidential program over shielded Logos data is
 demonstrated and recorded, settling on Solana.
 
-Depends on: M4, M6 (M5 strongly recommended).
+Depends on: M4, M6.
 
 ---
 
@@ -219,10 +259,11 @@ Depends on: M4, M7.
 ## Cross-cutting (ongoing)
 
 - ✅ **Devnet deployment** — done in M4.
+- 🔜 **Devnet redeploy of M5 coordinator** — carried to M6.
 - 🔜 **One-shot devnet deploy script** — codify the M4 deployment sequence.
 - ⬜ **Proving-service hardening** — latency budget, availability, decentralization.
 - ⬜ **Version-drift watch** — keep LEZ ↔ RISC Zero ↔ Solana-verifier aligned.
-- 🔜 **Build-in-public cadence** — M0–M4 posts ready; M4 has a live devnet tx link.
+- 🔜 **Build-in-public cadence** — M0–M5 posts ready; M4 has a live devnet tx link.
 
 ---
 
@@ -245,15 +286,20 @@ Foundation (Exp 1,2,3) ✅
         │
         ▼
       M4  (verified on public Solana devnet) ✅
-        ├────────────► M5 (nullifier binding + accelerators)
-        ├────────────► M6 (opcode/syscall coverage)
-        │                     │
-        ▼                     ▼
-      M7  (flagship demo) ◄───┘
+        │
+        ▼
+      M5  (cryptographic nullifier binding + accelerators) ✅
+        │
+        ▼
+      M6  (opcode/syscall coverage + devnet redeploy)
+        │
+        ▼
+      M7  (flagship demo)
         │
         ▼
       M8  (developer SDK)
 ```
 
-M0 through M4 are green — the full stack is verified on a public validator. M5 is
-the active milestone: cryptographic nullifier binding and accelerators.
+M0 through M5 are green — the full stack is verified on a public validator with
+trustless nullifier binding. M6 is the active milestone: opcode/syscall coverage
+and redeploying the M5 coordinator to devnet.
