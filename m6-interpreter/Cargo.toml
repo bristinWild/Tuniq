@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "interpreter",
+    "conformance",
+]
+resolver = "2"
