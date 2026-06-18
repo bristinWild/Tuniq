@@ -1,0 +1,17 @@
+[package]
+name = "sbpf-zkvm-guest"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[[bin]]
+name = "sbpf_predicate"
+path = "src/main.rs"
+
+[dependencies]
+sbpf-interpreter = { path = "../interpreter" }
+risc0-zkvm       = { version = "=3.0.5", default-features = false }
+
+[target.'cfg(target_os = "zkvm")'.dependencies]
+getrandom = { version = "0.2", features = ["custom"] }

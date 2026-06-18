@@ -1,0 +1,10 @@
+[package]
+name = "sbpf-prover"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sbpf-methods     = { path = "../methods" }
+sbpf-interpreter = { path = "../interpreter" }
+risc0-zkvm       = { version = "=3.0.5", features = ["std"] }
+anyhow           = "1"

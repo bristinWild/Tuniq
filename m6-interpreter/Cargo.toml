@@ -2,5 +2,10 @@
 members = [
     "interpreter",
     "conformance",
+    "methods",
+    "prover",
+]
+exclude = [
+    "zkvm-guest",
 ]
 resolver = "2"
